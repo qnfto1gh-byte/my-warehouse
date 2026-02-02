@@ -21,12 +21,41 @@ if not st.session_state.inventory.empty:
     urgent_items = df_alert[df_alert['유통기한_dt'] <= limit_date].sort_values(by='유통기한_dt')
     
     if not urgent_items.empty:
-        st.error("🚨 **유통기한 임박 물자 발생! (7일 이내)**")
-        for _, row in urgent_items.iterrows():
-            st.write(f"⚠️ **{row['물품명']}** ({row['개수']}{row['단위']}) - 유통기한: **{row['유통기한']}**")
-        st.divider()
+        with st.container():
+            st.error("🚨 **유통기한 임박 물자 발생! (7일 이내)**")
+            for _, row in urgent_items.iterrows():
+                st.write(f"⚠️ **{row['물품명']}** ({row['개수']}{row['단위']}) - 유통기한: **{row['유통기한']}**")
+            st.divider()
 
-# --- 2. 품목별 개별 총량 요약 ---
+# --- 2. [변경] 물자 입력 칸 (사이드바 탈출!) ---
+with st.expander("➕ 신규 물자 등록 (클릭해서 열기/닫기)", expanded=False):
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        name = st.text_input("물품명", key="input_name")
+    with c2:
+        qty = st.number_input("입고 개수", min_value=1, step=1, key="input_qty")
+    with c3:
+        exp_date = st.date_input("유통기한", datetime.now(), key="input_date")
+    
+    c4, c5 = st.columns([1, 1])
+    with c4:
+        weight = st.number_input("단위당 무게", min_value=0.0, key="input_weight")
+    with c5:
+        unit = st.selectbox("단위", ["kg", "g", "L", "mL"], key="input_unit")
+    
+    if st.button("🚀 창고에 등록하기", use_container_width=True):
+        if name:
+            new_row = pd.DataFrame([[name, qty, exp_date.strftime('%Y-%m-%d'), weight * qty, unit]], 
+                                   columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
+            st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
+            st.success(f"✅ {name} 등록 완료!")
+            st.rerun()
+        else:
+            st.warning("물품명을 입력해주세요.")
+
+st.divider()
+
+# --- 3. 품목별 개별 총량 요약 ---
 if not st.session_state.inventory.empty:
     st.subheader("📍 [1단계] 품목별 합계")
     df_main = st.session_state.inventory.copy()
@@ -39,7 +68,7 @@ if not st.session_state.inventory.empty:
     
     st.divider()
 
-    # --- 3. 검색 및 상세 리스트 ---
+    # --- 4. 검색 및 상세 리스트 ---
     st.subheader("🔍 물자 검색 및 상세현황")
     search_term = st.text_input("찾으시는 물품명을 입력하세요", "")
 
@@ -51,30 +80,8 @@ if not st.session_state.inventory.empty:
     
     df_main.index = range(1, len(df_main) + 1)
     st.table(df_main)
-else:
-    st.info("현재 등록된 물자가 없습니다. 왼쪽 [➕ 물자 입력] 메뉴를 이용하세요.")
 
-# --- 4. 사이드바: 입력창 ---
-with st.sidebar:
-    st.header("➕ 물자 입력")
-    name = st.text_input("물품명", key="input_name")
-    qty = st.number_input("입고 개수", min_value=1, step=1, key="input_qty")
-    exp_date = st.date_input("유통기한", datetime.now(), key="input_date")
-    weight = st.number_input("단위당 무게", min_value=0.0, key="input_weight")
-    unit = st.selectbox("단위", ["kg", "g", "L", "mL"], key="input_unit")
-    
-    if st.button("창고에 등록하기"):
-        if name:
-            new_row = pd.DataFrame([[name, qty, exp_date.strftime('%Y-%m-%d'), weight * qty, unit]], 
-                                   columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
-            st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-            st.success(f"✅ {name} 등록 완료!")
-            st.rerun()
-        else:
-            st.warning("물품명을 입력해주세요.")
-
-# --- 5. 개수 지정 삭제 기능 ---
-if not st.session_state.inventory.empty:
+    # --- 5. 개수 지정 삭제 기능 ---
     with st.expander("🗑️ 물자 불출 (개수 지정 삭제)"):
         df_del = st.session_state.inventory.copy()
         df_del['display'] = df_del['물품명'] + " [" + df_del['유통기한'] + "]"
@@ -95,3 +102,5 @@ if not st.session_state.inventory.empty:
                 st.session_state.inventory.at[idx, '개수'] -= minus_qty
                 st.session_state.inventory.at[idx, '총 무게'] = st.session_state.inventory.at[idx, '개수'] * u_weight
             st.rerun()
+else:
+    st.info("현재 등록된 물자가 없습니다. 상단의 [➕ 신규 물자 등록]을 누르세요.")
