@@ -22,19 +22,20 @@ if not st.session_state.inventory.empty:
             txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
             st.write(f"⚠️ {r['물품명']} - {txt} ({r['유통기한']})")
 
-# 2. 물자 등록 (2100년 대비 로직 추가)
+# 2. 물자 등록 (연도 판단 기준 수정: 80 미만은 2000년대)
 with st.expander("➕ 신규 물자 등록", expanded=False):
     c1, c2, c3 = st.columns([2, 1, 1])
     name = c1.text_input("물품명", key="n")
     qty = c2.number_input("개수", min_value=1, step=1, value=1, key="q")
-    raw_date = c3.text_input("유통기한 6자리", placeholder="예: 270901", key="d", max_chars=6)
+    raw_date = c3.text_input("유통기한 6자리", placeholder="예: 270917", key="d", max_chars=6)
     
+    full_dt = ""
     if len(raw_date) == 6:
-        # 연도 판단 로직: 00~50은 2100년대로, 51~99는 2000년대로 설정 (필요시 조정)
         yy = int(raw_date[:2])
-        century = "21" if yy < 50 else "20"
-        display_date = f"{century}{raw_date[:2]}/{raw_date[2:4]}/{raw_date[4:]}"
-        st.caption(f"입력된 날짜: **{display_date}**")
+        # 80보다 작으면 2000년대(2027년 등), 80 이상이면 1900년대 혹은 예외처리
+        century = "20" if yy < 80 else "19" 
+        full_dt = f"{century}{raw_date[:2]}-{raw_date[2:4]}-{raw_date[4:]}"
+        st.caption(f"입력된 날짜: **{full_dt.replace('-', '/')}**")
 
     c4, c5 = st.columns(2)
     wgt = c4.number_input("단위당 무게", min_value=0, step=1, key="w")
@@ -43,10 +44,6 @@ with st.expander("➕ 신규 물자 등록", expanded=False):
     if st.button("🚀 등록하기", use_container_width=True):
         if name and len(raw_date) == 6:
             try:
-                yy = int(raw_date[:2])
-                century = "21" if yy < 50 else "20"
-                full_dt = f"{century}{raw_date[:2]}-{raw_date[2:4]}-{raw_date[4:]}"
-                # 날짜 유효성 검사
                 datetime.strptime(full_dt, "%Y-%m-%d") 
                 row = pd.DataFrame([[name, int(qty), full_dt, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
                 st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
@@ -58,7 +55,7 @@ with st.expander("➕ 신규 물자 등록", expanded=False):
 
 st.divider()
 
-# 3. 현황 리스트 (이하 동일)
+# 3. 현황 리스트 (접기/펴기)
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
