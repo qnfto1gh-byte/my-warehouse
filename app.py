@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="부대 창고 현황판", layout="wide")
 
@@ -12,7 +12,23 @@ if 'inventory' not in st.session_state:
         columns=["물품명", "개수", "유통기한", "총 무게", "단위"]
     )
 
-# --- 1. 품목별 개별 총량 요약 ---
+# --- 1. [복구] 유통기한 임박 알림창 (가장 상단) ---
+if not st.session_state.inventory.empty:
+    df_alert = st.session_state.inventory.copy()
+    df_alert['유통기한_dt'] = pd.to_datetime(df_alert['유통기한'])
+    
+    # 오늘 기준으로 7일 이내 데이터 추출
+    limit_date = datetime.now() + timedelta(days=7)
+    urgent_items = df_alert[df_alert['유통기한_dt'] <= limit_date].sort_values(by='유통기한_dt')
+    
+    if not urgent_items.empty:
+        st.error("🚨 **유통기한 임박 물자 발생! (7일 이내)**")
+        # 보기 편하게 리스트 형태로 출력
+        for _, row in urgent_items.iterrows():
+            st.write(f"⚠️ **{row['물품명']}** ({row['개수']}{row['단위']}) - 유통기한: **{row['유통기한']}**")
+        st.divider()
+
+# --- 2. 품목별 개별 총량 요약 ---
 if not st.session_state.inventory.empty:
     st.subheader("📍 [1단계] 품목별 합계")
     df = st.session_state.inventory.copy()
@@ -25,22 +41,16 @@ if not st.session_state.inventory.empty:
     
     st.divider()
 
-    # --- 2. [신규] 검색 기능 ---
-    st.subheader("🔍 물자 검색")
-    search_term = st.text_input("찾으시는 물품명을 입력하세요 (예: 건빵, 물)", "")
+    # --- 3. 검색 및 상세 리스트 ---
+    st.subheader("🔍 물자 검색 및 상세현황")
+    search_term = st.text_input("찾으시는 물품명을 입력하세요", "")
 
-    # --- 3. 유통기한 순 물품 리스트 ---
-    st.subheader("📅 [2단계] 물품별 상세 (유통기한 빠른 순)")
-    
-    # 기본 정렬 (유통기한 순)
+    # 유통기한 순 정렬
     df['유통기한_dt'] = pd.to_datetime(df['유통기한'])
     df = df.sort_values(by='유통기한_dt').drop(columns=['유통기한_dt'])
     
-    # 검색어가 있으면 필터링
     if search_term:
         df = df[df['물품명'].str.contains(search_term, case=False, na=False)]
-        if df.empty:
-            st.warning(f"'{search_term}'에 대한 검색 결과가 없습니다.")
     
     df.index = range(1, len(df) + 1)
     st.table(df)
@@ -68,7 +78,6 @@ if not st.session_state.inventory.empty:
     with st.expander("🗑️ 물자 불출 (개수 지정 삭제)"):
         df_del = st.session_state.inventory.copy()
         df_del['display'] = df_del['물품명'] + " [" + df_del['유통기한'] + "]"
-        
         target = st.selectbox("불출할 물자를 선택하세요", df_del['display'].unique())
         
         selected_info = df_del[df_del['display'] == target].iloc[0]
@@ -82,9 +91,7 @@ if not st.session_state.inventory.empty:
             idx = df_del[df_del['display'] == target].index[0]
             if minus_qty >= current_qty:
                 st.session_state.inventory = st.session_state.inventory.drop(idx).reset_index(drop=True)
-                st.success(f"{target} 전량 불출 완료!")
             else:
                 st.session_state.inventory.at[idx, '개수'] -= minus_qty
                 st.session_state.inventory.at[idx, '총 무게'] = st.session_state.inventory.at[idx, '개수'] * unit_weight
-                st.success(f"{target} {minus_qty}개 불출 완료!")
             st.rerun()
