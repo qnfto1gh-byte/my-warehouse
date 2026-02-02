@@ -31,13 +31,11 @@ def get_total_display(df_item):
 # --- 메인 화면 시작 ---
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창 (메인 상단으로 이동 - 키보드 가림 방지)
-# expander를 사용하여 평소에는 접어두되, 열었을 때 상단에 위치하여 키보드 위로 잘 보이게 함
-with st.expander("➕ 신규 물자 등록 (여기를 눌러 입력하세요)", expanded=False):
-    # 입력 칸들을 한 줄씩 배치하여 모바일에서 클릭하기 쉽게 함
+# 1. 물자 등록 창 (상단 배치)
+with st.expander("➕ 신규 물자 등록", expanded=False):
     name = st.text_input("물품명", key="n")
-    qty = st.number_input("개수", min_value=1, step=1, key="q")
-    d6 = st.text_input("유통기한 6자리 (예: 270917)", key="d", max_chars=6)
+    qty = st.number_input("입고 개수", min_value=1, step=1, key="q")
+    d6 = st.text_input("유통기한 6자리 (YYMMDD)", key="d", max_chars=6)
     
     f_dt = ""
     if len(d6) == 6:
@@ -89,20 +87,32 @@ if not st.session_state.inventory.empty:
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
         display_total = get_total_display(i_df)
-        
         d_v = (min_d - today).days
         d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
         
         with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d}({d_l}) | 총량: {display_total}"):
             st.table(i_df[["개수", "유통기한", "총 무게", "단위"]])
-            if st.button(f"{item} 1개 불출", key=f"del_{item}"):
-                idx = i_df.index[0]
-                if st.session_state.inventory.at[idx, '개수'] > 1:
-                    u_w = st.session_state.inventory.at[idx, '총 무게'] / st.session_state.inventory.at[idx, '개수']
-                    st.session_state.inventory.at[idx, '개수'] -= 1
-                    st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * u_w)
-                else:
-                    st.session_state.inventory = st.session_state.inventory.drop(idx).reset_index(drop=True)
+            
+            # --- 수량 불출 로직 ---
+            c1, c2 = st.columns([2, 1])
+            rem_qty = c1.number_input(f"불출할 개수", min_value=1, max_value=t_qty, step=1, key=f"q_{item}")
+            if c2.button(f"불출", key=f"b_{item}", use_container_width=True):
+                to_remove = rem_qty
+                # 유통기한 순으로 정렬된 인덱스 가져오기
+                for idx in i_df.index:
+                    if to_remove <= 0: break
+                    current_stock = st.session_state.inventory.at[idx, '개수']
+                    unit_w = st.session_state.inventory.at[idx, '총 무게'] / current_stock
+                    
+                    if current_stock <= to_remove:
+                        to_remove -= current_stock
+                        st.session_state.inventory = st.session_state.inventory.drop(idx)
+                    else:
+                        st.session_state.inventory.at[idx, '개수'] -= to_remove
+                        st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * unit_w)
+                        to_remove = 0
+                
+                st.session_state.inventory = st.session_state.inventory.reset_index(drop=True)
                 st.rerun()
 else:
-    st.info("상단 '신규 물자 등록'을 눌러 물품을 추가해 주세요.")
+    st.info("물자를 등록해 주세요.")
