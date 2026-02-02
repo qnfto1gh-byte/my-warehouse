@@ -5,7 +5,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 포커스 자동 이동 스크립트 (천지인/쿼티 공통)
+# 포커스 자동 이동 스크립트
 components.html(
     """
     <script>
@@ -51,7 +51,7 @@ def get_total_display(df_item):
 
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창 (문구 제거 및 깔끔한 배치)
+# 1. 물자 등록 창 (로직 개선)
 with st.expander("➕ 신규 물자 등록", expanded=True):
     with st.form("input_form"):
         name = st.text_input("1. 물품명", key="m_name")
@@ -63,7 +63,11 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
         submit = st.form_submit_button("🚀 창고에 등록하기", use_container_width=True)
         
         if submit:
-            if name and len(d6) == 6:
+            if not name:
+                st.warning("⚠️ 물품명을 입력해주세요.")
+            elif len(d6) != 6:
+                st.error("❌ 날짜 6자리를 확인해주세요.")
+            else:
                 try:
                     yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
                     f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
@@ -72,16 +76,15 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                     new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-                    st.success(f"✅ {name} 등록 완료")
+                    # 성공 시 토스트 메시지로 띄워주고 화면 갱신
+                    st.toast(f"✅ {name} 등록 완료!")
                     st.rerun()
                 except:
-                    st.error("날짜 확인 필요")
-            else:
-                st.warning("항목 누락")
+                    st.error("❌ 유효하지 않은 날짜입니다. (예: 270230 등)")
 
 st.divider()
 
-# 2. 검색 및 리스트
+# 2. 검색 및 리스트 (이하 동일)
 search = st.text_input("🔍 검색", placeholder="물품명 입력...")
 
 if not st.session_state.inventory.empty:
