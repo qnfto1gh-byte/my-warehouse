@@ -32,12 +32,11 @@ components.html("""
     </script>
 """, height=0)
 
-# --- [중요] 구글 시트 주소를 꼭 본인 것으로 수정하세요 ---
+# --- [중요] 구글 시트 주소 입력 ---
 SHEET_URL = "여기에_구글_시트_주소를_넣으세요"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 데이터 로드 (캐시 없이 실시간 반영)
 def load_data():
     try:
         inv = conn.read(spreadsheet=SHEET_URL, worksheet="Inventory", ttl="0")
@@ -51,7 +50,7 @@ def load_data():
 inventory, history = load_data()
 today = datetime.now().date()
 
-# [기능 1] 총 무게 표시 로직
+# [기능 1] 총 무게 표시 함수
 def get_total_display(df_item):
     total_val = 0
     unit_type = "" 
@@ -65,7 +64,7 @@ def get_total_display(df_item):
 
 st.title("📦 창고관리 시스템")
 
-# [기능 3] 작업로그 (접이식 + 날짜별 그룹화)
+# [기능 3] 작업로그 (접이식)
 with st.expander("🔍 작업로그 보기", expanded=False):
     if not history.empty:
         df_h = history.copy()
@@ -73,11 +72,32 @@ with st.expander("🔍 작업로그 보기", expanded=False):
         for d in sorted(df_h['날짜'].unique(), reverse=True):
             st.markdown(f"**📅 {d}**")
             st.table(df_h[df_h['날짜'] == d].sort_values("일시", ascending=False)[["일시", "물품명", "유형", "수량"]])
-    else: st.info("기록된 로그가 없습니다.")
+
+# [추가 기능 8] 주간 입출표 (기간별 정산 보고)
+with st.expander("📅 주간 입출 정산 보고", expanded=False):
+    d_range = st.date_input("정산 기간 선택", value=(today - timedelta(days=7), today))
+    if len(d_range) == 2:
+        s_d, e_d = d_range
+        if st.button("📊 보고서 생성"):
+            if not history.empty:
+                df_rep = history.copy()
+                df_rep['날짜'] = pd.to_datetime(df_rep['일시']).dt.date
+                filtered = df_rep[(df_rep['날짜'] >= s_d) & (df_rep['날짜'] <= e_d)]
+                if not filtered.empty:
+                    stats = filtered.groupby(['물품명', '유형'])['수량'].sum().unstack(fill_value=0)
+                    for col in ['입고', '불출']: 
+                        if col not in stats: stats[col] = 0
+                    st.table(stats[['입고', '불출']])
+                    # 복사용 텍스트 생성
+                    report_text = f"📋 [정산 보고] {s_d} ~ {e_d}\n"
+                    for item in stats.index:
+                        report_text += f"🔹 {item}: 입고 {stats.loc[item, '입고']} / 불출 {stats.loc[item, '불출']}\n"
+                    st.code(report_text)
+                else: st.warning("해당 기간에 기록이 없습니다.")
 
 st.divider()
 
-# [기능 6] 신규 물자 등록 (날짜 오류 방지 로직)
+# [기능 6] 신규 물자 등록
 with st.expander("➕ 신규 물자 등록", expanded=True):
     with st.form("reg_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -96,56 +116,44 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                     inventory = pd.concat([inventory, new_inv], ignore_index=True)
                     new_log = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, "입고", int(qty), "정상"]], columns=history.columns)
                     history = pd.concat([history, new_log], ignore_index=True)
-                    
                     conn.update(spreadsheet=SHEET_URL, worksheet="Inventory", data=inventory)
                     conn.update(spreadsheet=SHEET_URL, worksheet="History", data=history)
-                    st.success(f"✅ {name} {qty}개 등록 완료!")
-                    time.sleep(0.5); st.rerun()
-                except: st.error("❌ 날짜 형식을 확인해주세요 (예: 260228)")
-            else: st.warning("⚠️ 모든 빈칸을 채워주세요.")
+                    st.success(f"✅ {name} 등록 완료!"); time.sleep(0.5); st.rerun()
+                except: st.error("❌ 날짜 확인요망")
 
 st.divider()
 
-# [기능 2] 현재고 현황 및 검색
+# [기능 2] 검색 및 재고 현황
 st.subheader("📦 현재 창고 재고 현황")
-search = st.text_input("🔍 물품 검색", placeholder="물품명을 입력하면 아래 목록이 필터링됩니다.")
+search = st.text_input("🔍 물품 검색")
 
 if not inventory.empty:
     df_m = inventory.copy()
     items = [i for i in df_m['물품명'].unique() if search.lower() in str(i).lower()]
-    
     for item in items:
         i_df = df_m[df_m['물품명'] == item].copy()
         i_df['dt'] = pd.to_datetime(i_df['유통기한']).dt.date
         i_df = i_df.sort_values('dt')
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
-        
-        # [기능 1] 제목에 총 무게 표시
         with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d} (D-{(min_d-today).days}) | {get_total_display(i_df)}"):
             st.table(i_df[["개수", "유통기한"]])
             c1, c2 = st.columns([2, 1])
             rem_qty = c1.number_input(f"불출 수량", min_value=1, max_value=t_qty, key=f"del_{item}", value=1)
             if c2.button("불출 확정", key=f"btn_{item}"):
-                # 선입선출(FIFO) 차감 로직
                 rem = rem_qty
                 temp_inv = inventory.copy()
                 for idx in i_df.index:
                     if rem <= 0: break
                     curr = temp_inv.at[idx, '개수']
                     u_w = temp_inv.at[idx, '총 무게'] / curr
-                    if curr <= rem:
-                        rem -= curr; temp_inv = temp_inv.drop(idx)
+                    if curr <= rem: rem -= curr; temp_inv = temp_inv.drop(idx)
                     else:
                         temp_inv.at[idx, '개수'] -= rem
                         temp_inv.at[idx, '총 무게'] = int(temp_inv.at[idx, '개수'] * u_w)
                         rem = 0
-                
-                # 로그 기록 및 저장
                 new_log = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item, "불출", int(rem_qty), "정상"]], columns=history.columns)
                 history = pd.concat([history, new_log], ignore_index=True)
                 conn.update(spreadsheet=SHEET_URL, worksheet="Inventory", data=temp_inv.reset_index(drop=True))
                 conn.update(spreadsheet=SHEET_URL, worksheet="History", data=history)
                 st.rerun()
-else:
-    st.info("현재 재고가 없습니다. 물품을 등록해주세요.")
