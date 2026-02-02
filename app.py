@@ -10,7 +10,7 @@ if 'inventory' not in st.session_state:
 
 today = datetime.now().date()
 
-# 1. 알림창
+# 1. 임박 알림
 if not st.session_state.inventory.empty:
     df = st.session_state.inventory.copy()
     df['dt'] = pd.to_datetime(df['유통기한']).dt.date
@@ -22,40 +22,38 @@ if not st.session_state.inventory.empty:
             txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
             st.write(f"⚠️ {r['물품명']} - {txt} ({r['유통기한']})")
 
-# 2. 물자 등록 (연도 판단 기준 수정: 80 미만은 2000년대)
+# 2. 물자 등록 (연도 로직 수정)
 with st.expander("➕ 신규 물자 등록", expanded=False):
     c1, c2, c3 = st.columns([2, 1, 1])
     name = c1.text_input("물품명", key="n")
-    qty = c2.number_input("개수", min_value=1, step=1, value=1, key="q")
-    raw_date = c3.text_input("유통기한 6자리", placeholder="예: 270917", key="d", max_chars=6)
+    qty = c2.number_input("개수", min_value=1, step=1, key="q")
+    raw_d = c3.text_input("6자리(YYMMDD)", placeholder="270917", key="d", max_chars=6)
     
-    full_dt = ""
-    if len(raw_date) == 6:
-        yy = int(raw_date[:2])
-        # 80보다 작으면 2000년대(2027년 등), 80 이상이면 1900년대 혹은 예외처리
-        century = "20" if yy < 80 else "19" 
-        full_dt = f"{century}{raw_date[:2]}-{raw_date[2:4]}-{raw_date[4:]}"
-        st.caption(f"입력된 날짜: **{full_dt.replace('-', '/')}**")
-
     c4, c5 = st.columns(2)
     wgt = c4.number_input("단위당 무게", min_value=0, step=1, key="w")
     unit = c5.selectbox("단위", ["g", "kg", "L", "mL"], key="u")
     
     if st.button("🚀 등록하기", use_container_width=True):
-        if name and len(raw_date) == 6:
+        if name and len(raw_d) == 6:
             try:
-                datetime.strptime(full_dt, "%Y-%m-%d") 
-                row = pd.DataFrame([[name, int(qty), full_dt, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
+                # 80보다 작으면 2000년대, 크면 1900년대로 자동 설정
+                yy = "20" + raw_d[:2] if int(raw_d[:2]) < 80 else "19" + raw_d[:2]
+                f_dt = f"{yy}-{raw_d[2:4]}-{raw_d[4:]}"
+                
+                # 날짜가 실제로 존재하는지 검사 (예: 2월 30일 방지)
+                datetime.strptime(f_dt, "%Y-%m-%d")
+                
+                row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
                 st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
                 st.rerun()
             except:
-                st.error("❌ 유효하지 않은 날짜입니다.")
+                st.error("❌ 존재하지 않는 날짜입니다 (예: 02월 30일)")
         else:
-            st.warning("이름과 날짜 6자리를 확인하세요.")
+            st.warning("물품명과 숫자 6자리를 확인하세요.")
 
 st.divider()
 
-# 3. 현황 리스트 (접기/펴기)
+# 3. 리스트 표시
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
@@ -64,20 +62,11 @@ if not st.session_state.inventory.empty:
         min_d = i_df['dt'].min()
         d_v = (min_d - today).days
         d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
+        
         with st.expander(f"📦 {item} | 총 {int(i_df['개수'].sum())}개 | 가장 빠른: {min_d} ({d_l})"):
-            sub = i_df[["개수", "유통기한", "총 무게", "단위"]].copy()
-            st.table(sub.style.format({"개수": "{:.0f}", "총 무게": "{:.0f}"}))
-            st.caption(f"📍 {item} 불출")
-            sel_e = st.selectbox("불출 유통기한 선택", i_df['유통기한'].unique(), key=f"s_{item}")
+            st.table(i_df[["개수", "유통기한", "총 무게", "단위"]].style.format({"개수": "{:.0f}", "총 무게": "{:.0f}"}))
+            
+            # 불출 기능
+            sel_e = st.selectbox("불출 날짜 선택", i_df['유통기한'].unique(), key=f"s_{item}")
             m_qty = st.number_input("불출 개수", min_value=1, step=1, key=f"mq_{item}")
-            if st.button(f"{item} 불출 실행", key=f"b_{item}"):
-                idx = i_df[i_df['유통기한'] == sel_e].index[0]
-                cur = st.session_state.inventory.at[idx, '개수']
-                uw = st.session_state.inventory.at[idx, '총 무게'] / cur
-                if m_qty >= cur: st.session_state.inventory = st.session_state.inventory.drop(idx).reset_index(drop=True)
-                else:
-                    st.session_state.inventory.at[idx, '개수'] -= m_qty
-                    st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * uw)
-                st.rerun()
-else:
-    st.info("물자가 없습니다.")
+            if st.button(f"{item} 불출", key=f"
