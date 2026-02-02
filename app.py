@@ -5,7 +5,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 1. 강화된 포커스 이동 스크립트 (모든 종류의 엔터/이동 신호 감지)
+# 포커스 자동 이동 스크립트 (천지인/쿼티 공통)
 components.html(
     """
     <script>
@@ -31,7 +31,6 @@ if 'inventory' not in st.session_state:
 
 today = datetime.now().date()
 
-# --- 단위 환산 합산 함수 ---
 def get_total_display(df_item):
     total_raw_ml_g = 0
     base_unit_type = "" 
@@ -50,19 +49,15 @@ def get_total_display(df_item):
         final_unit = "mL" if base_unit_type == "L" else "g"
         return f"{int(total_raw_ml_g)}{final_unit}"
 
-# --- 메인 화면 ---
 st.title("📋 창고 현황판")
 
-# 2. 물자 등록 창
+# 1. 물자 등록 창 (문구 제거 및 깔끔한 배치)
 with st.expander("➕ 신규 물자 등록", expanded=True):
-    # form으로 묶어야 엔터 시 페이지 전체가 흔들리지 않습니다.
     with st.form("input_form"):
-        st.caption("천지인 유저님: '완료'나 '엔터'를 누르면 다음 칸으로 갑니다.")
-        
         name = st.text_input("1. 물품명", key="m_name")
         qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
         d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6, key="m_date")
-        wgt = st.number_input("4. 단위당 무게/부피 (숫자만)", min_value=0, step=1, key="m_wgt")
+        wgt = st.number_input("4. 단위당 무게/부피", min_value=0, step=1, key="m_wgt")
         unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"], key="m_unit")
         
         submit = st.form_submit_button("🚀 창고에 등록하기", use_container_width=True)
@@ -77,22 +72,21 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                     new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-                    st.success(f"✅ {name} 등록 완료!")
+                    st.success(f"✅ {name} 등록 완료")
                     st.rerun()
                 except:
-                    st.error("날짜를 확인해주세요.")
+                    st.error("날짜 확인 필요")
             else:
-                st.warning("모든 정보를 입력해주세요.")
+                st.warning("항목 누락")
 
 st.divider()
 
-# 3. 검색 및 리스트
-search = st.text_input("🔍 검색", placeholder="물품명 검색...")
+# 2. 검색 및 리스트
+search = st.text_input("🔍 검색", placeholder="물품명 입력...")
 
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
-    
     items = [i for i in df_m['물품명'].unique() if search.lower() in i.lower()]
 
     for item in items:
@@ -100,7 +94,6 @@ if not st.session_state.inventory.empty:
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
         total_str = get_total_display(i_df)
-        
         d_v = (min_d - today).days
         d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
         
@@ -125,3 +118,5 @@ if not st.session_state.inventory.empty:
                         to_rem = 0
                 st.session_state.inventory = temp_inv.reset_index(drop=True)
                 st.rerun()
+else:
+    st.info("창고가 비어있습니다.")
