@@ -8,33 +8,41 @@ import time
 # 앱 설정
 st.set_page_config(page_title="창고관리", layout="wide")
 
-# [기능 4, 5, 7] 엔터 이동 + 숫자패드 + 0 자동삭제 및 전체선택 스크립트
+# [핵심 수정] 4, 5, 7번 해결: 엔터 이동 후에도 0 자동 삭제 및 전체 선택
 components.html("""
     <script>
     const doc = window.parent.document;
+    
+    // 1. 포커스가 들어올 때(클릭 or 엔터 이동) 처리
     doc.addEventListener('focusin', function(e) {
         if (e.target.tagName === 'INPUT' && (e.target.type === 'number' || e.target.inputMode === 'numeric')) {
-            if (e.target.value === "0") { e.target.value = ""; }
-            e.target.select();
+            // 값이 "0"이면 즉시 비움
+            if (e.target.value === "0" || e.target.value === 0) {
+                e.target.value = "";
+            }
+            // 기존 숫자가 있어도 바로 덮어쓸 수 있게 전체 선택
+            setTimeout(() => { e.target.select(); }, 10);
             e.target.dispatchEvent(new Event('input', { bubbles: true }));
         }
     });
+
+    // 2. 엔터 키로 다음 칸 이동
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.keyCode === 13) {
             const active = doc.activeElement;
             const inputs = Array.from(doc.querySelectorAll('input'));
             const index = inputs.indexOf(active);
             if (index > -1 && index < inputs.length - 1) {
-                e.preventDefault(); inputs[index + 1].focus();
+                e.preventDefault();
+                inputs[index + 1].focus(); // 다음 칸으로 포커스 이동 (위의 focusin 이벤트가 자동 실행됨)
             }
         }
     }, true);
     </script>
 """, height=0)
 
-# --- [중요] 구글 시트 주소 입력 ---
-SHEET_URL = "여기에_구글_시트_주소를_넣으세요"
-
+# --- 구글 시트 연결 ---
+SHEET_URL = "여기에_본인의_구글_시트_주소를_복사해서_넣으세요"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
@@ -50,7 +58,7 @@ def load_data():
 inventory, history = load_data()
 today = datetime.now().date()
 
-# [기능 1] 총 무게 표시 함수
+# [기능 1] 총 무게 표시
 def get_total_display(df_item):
     total_val = 0
     unit_type = "" 
@@ -58,13 +66,12 @@ def get_total_display(df_item):
         val, u = row['총 무게'], row['단위']
         total_val += val * 1000 if u in ["L", "kg"] else val
         unit_type = "L" if u in ["L", "mL"] else "kg"
-    if total_val >= 1000:
-        return f"{total_val/1000:.2f}{unit_type}".replace(".00", "")
+    if total_val >= 1000: return f"{total_val/1000:.2f}{unit_type}".replace(".00", "")
     return f"{int(total_val)}{'mL' if unit_type == 'L' else 'g'}"
 
 st.title("📦 창고관리 시스템")
 
-# [기능 3] 작업로그 (접이식)
+# [기능 3] 작업로그
 with st.expander("🔍 작업로그 보기", expanded=False):
     if not history.empty:
         df_h = history.copy()
@@ -73,7 +80,7 @@ with st.expander("🔍 작업로그 보기", expanded=False):
             st.markdown(f"**📅 {d}**")
             st.table(df_h[df_h['날짜'] == d].sort_values("일시", ascending=False)[["일시", "물품명", "유형", "수량"]])
 
-# [추가 기능 8] 주간 입출표 (기간별 정산 보고)
+# [기능 8] 주간 입출표 (정산 보고)
 with st.expander("📅 주간 입출 정산 보고", expanded=False):
     d_range = st.date_input("정산 기간 선택", value=(today - timedelta(days=7), today))
     if len(d_range) == 2:
@@ -88,24 +95,23 @@ with st.expander("📅 주간 입출 정산 보고", expanded=False):
                     for col in ['입고', '불출']: 
                         if col not in stats: stats[col] = 0
                     st.table(stats[['입고', '불출']])
-                    # 복사용 텍스트 생성
                     report_text = f"📋 [정산 보고] {s_d} ~ {e_d}\n"
                     for item in stats.index:
                         report_text += f"🔹 {item}: 입고 {stats.loc[item, '입고']} / 불출 {stats.loc[item, '불출']}\n"
                     st.code(report_text)
-                else: st.warning("해당 기간에 기록이 없습니다.")
+                else: st.warning("기록이 없습니다.")
 
 st.divider()
 
-# [기능 6] 신규 물자 등록
+# [기능 6, 5, 7] 신규 등록 (엔터 이동 시 0 자동삭제 반영)
 with st.expander("➕ 신규 물자 등록", expanded=True):
     with st.form("reg_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         name = c1.text_input("물품명")
-        qty = c2.number_input("입고 수량", min_value=0, value=0, step=1)
+        qty = c2.number_input("입고 수량", min_value=0, value=0)
         c3, c4 = st.columns(2)
         d6 = c3.text_input("유통기한 (YYMMDD)", max_chars=6)
-        wgt = c4.number_input("단위당 무게/부피", min_value=0, value=0, step=1)
+        wgt = c4.number_input("단위당 무게/부피", min_value=0, value=0)
         unit = st.selectbox("단위", ["g", "mL", "kg", "L"])
         
         if st.form_submit_button("🚀 등록하기", use_container_width=True):
@@ -118,7 +124,7 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                     history = pd.concat([history, new_log], ignore_index=True)
                     conn.update(spreadsheet=SHEET_URL, worksheet="Inventory", data=inventory)
                     conn.update(spreadsheet=SHEET_URL, worksheet="History", data=history)
-                    st.success(f"✅ {name} 등록 완료!"); time.sleep(0.5); st.rerun()
+                    st.success("✅ 등록 완료!"); time.sleep(0.5); st.rerun()
                 except: st.error("❌ 날짜 확인요망")
 
 st.divider()
@@ -136,6 +142,7 @@ if not inventory.empty:
         i_df = i_df.sort_values('dt')
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
+        # [기능 1] 총 무게 표시
         with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d} (D-{(min_d-today).days}) | {get_total_display(i_df)}"):
             st.table(i_df[["개수", "유통기한"]])
             c1, c2 = st.columns([2, 1])
