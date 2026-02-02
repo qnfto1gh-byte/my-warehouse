@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 데이터 유지 확인
 if 'inventory' not in st.session_state:
     st.session_state.inventory = pd.DataFrame(columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
 
@@ -15,8 +14,7 @@ def get_total_display(df_item):
     total_raw_ml_g = 0
     base_unit_type = "" 
     for i, row in df_item.iterrows():
-        val = row['총 무게']
-        u = row['단위']
+        val, u = row['총 무게'], row['단위']
         if u == "L": total_raw_ml_g += val * 1000; base_unit_type = "L"
         elif u == "kg": total_raw_ml_g += val * 1000; base_unit_type = "kg"
         elif u == "mL": total_raw_ml_g += val; base_unit_type = "L"
@@ -30,102 +28,94 @@ def get_total_display(df_item):
         final_unit = "mL" if base_unit_type == "L" else "g"
         return f"{int(total_raw_ml_g)}{final_unit}"
 
-# --- 메인 화면 시작 ---
+# --- 메인 화면 ---
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창
-with st.expander("➕ 신규 물자 등록", expanded=False):
+# 1. 물자 등록 창 (모바일 최적화 배치)
+with st.expander("➕ 신규 물자 등록", expanded=True):
+    # form을 사용하되 순차적 입력을 유도
     with st.form("input_form"):
-        name = st.text_input("1. 물품명")
-        qty = st.number_input("2. 입고 개수", min_value=1, step=1)
-        d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6)
-        wgt = st.number_input("4. 단위당 무게/부피 (정수)", min_value=0, step=1)
-        unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"])
+        st.write("입력 후 키보드의 '다음'을 눌러 이동하세요.")
         
-        submit_button = st.form_submit_button("🚀 창고에 등록하기", use_container_width=True)
+        # 칸들을 세로로 배치하여 모바일에서 '다음' 버튼이 잘 작동하게 함
+        i_name = st.text_input("1. 물품명 (예: 생수)", key="m_name")
+        i_qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
+        i_d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6, key="m_date")
+        i_wgt = st.number_input("4. 단위당 무게/부피 (숫자만)", min_value=0, step=1, key="m_wgt")
+        i_unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"], key="m_unit")
         
-        if submit_button:
-            if name and len(d6) == 6:
+        # 제출 버튼
+        submit = st.form_submit_button("🚀 등록 완료", use_container_width=True)
+        
+        if submit:
+            if i_name and len(i_d6) == 6:
                 try:
-                    # 연도 처리
-                    if int(d6[:2]) < 80:
-                        yy = "20" + d6[:2]
-                    else:
-                        yy = "19" + d6[:2]
-                    
-                    f_dt = yy + "-" + d6[2:4] + "-" + d6[4:]
+                    yy = "20" + i_d6[:2] if int(i_d6[:2]) < 80 else "19" + i_d6[:2]
+                    f_dt = yy + "-" + i_d6[2:4] + "-" + i_d6[4:]
                     datetime.strptime(f_dt, "%Y-%m-%d")
                     
-                    new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
+                    new_row = pd.DataFrame([[i_name, int(i_qty), f_dt, int(i_wgt*i_qty), i_unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-                    st.success(f"✅ {name} 등록 완료!")
+                    st.success(f"✅ {i_name} 등록!")
                     st.rerun()
                 except:
-                    st.error("❌ 날짜가 이상해요. 다시 확인해주세요.")
+                    st.error("날짜를 확인해주세요 (예: 250531)")
             else:
-                st.warning("⚠️ 항목을 모두 채워주세요.")
+                st.warning("항목을 다 채워주세요.")
 
 st.divider()
 
 # 2. 검색창
-search = st.text_input("🔍 검색어 입력", placeholder="물품명을 입력하세요...")
+search = st.text_input("🔍 검색", placeholder="물품명 검색...")
 
-# 3. 임박 알림
+# 3. 임박 알림 (7일 이내)
 if not st.session_state.inventory.empty:
     df_u = st.session_state.inventory.copy()
     df_u['dt'] = pd.to_datetime(df_u['유통기한']).dt.date
     urg = df_u[df_u['dt'] <= today + timedelta(days=7)].sort_values('dt')
     if not urg.empty:
-        st.error("🚨 유통기한 임박 (7일 이내)")
+        st.error("🚨 유통기한 임박")
         for i, r in urg.iterrows():
             d = (r['dt'] - today).days
             txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
             st.write(f"⚠️ **{r['물품명']}** - {txt} ({r['유통기한']})")
 
-# 4. 리스트 현황
+# 4. 현황 리스트
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
     
-    all_items = df_m['물품명'].unique()
-    target_items = []
-    for i in all_items:
-        if search.lower() in i.lower():
-            target_items.append(i)
+    # 검색 필터
+    items = [i for i in df_m['물품명'].unique() if search.lower() in i.lower()]
 
-    for item in target_items:
+    for item in items:
         i_df = df_m[df_m['물품명'] == item].sort_values('dt')
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
-        display_total = get_total_display(i_df)
-        d_v = (min_d - today).days
-        if d_v > 0: d_l = "D-" + str(d_v)
-        elif d_v == 0: d_l = "오늘"
-        else: d_l = "만료 D+" + str(-d_v)
+        total_str = get_total_display(i_df)
         
-        with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d}({d_l}) | 총량: {display_total}"):
+        d_v = (min_d - today).days
+        d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
+        
+        with st.expander(f"📦 {item} | {t_qty}개 | {min_d}({d_l}) | {total_str}"):
             st.table(i_df[["개수", "유통기한", "총 무게", "단위"]])
             
             c1, c2 = st.columns([2, 1])
-            rem_qty = c1.number_input(f"불출 개수", min_value=1, max_value=t_qty, step=1, key="q_"+item)
-            if c2.button(f"확인 후 불출", key="b_"+item, use_container_width=True):
-                to_remove = rem_qty
+            rem_qty = c1.number_input(f"불출 수량", min_value=1, max_value=t_qty, step=1, key="del_q_"+item)
+            if c2.button(f"불출", key="del_b_"+item, use_container_width=True):
+                to_rem = rem_qty
                 temp_inv = st.session_state.inventory.copy()
-                item_indices = i_df.index
-                for idx in item_indices:
-                    if to_remove <= 0: break
-                    current_stock = temp_inv.at[idx, '개수']
-                    unit_w = temp_inv.at[idx, '총 무게'] / current_stock
-                    
-                    if current_stock <= to_remove:
-                        to_remove -= current_stock
+                for idx in i_df.index:
+                    if to_rem <= 0: break
+                    curr = temp_inv.at[idx, '개수']
+                    u_w = temp_inv.at[idx, '총 무게'] / curr
+                    if curr <= to_rem:
+                        to_rem -= curr
                         temp_inv = temp_inv.drop(idx)
                     else:
-                        temp_inv.at[idx, '개수'] -= to_remove
-                        temp_inv.at[idx, '총 무게'] = int(temp_inv.at[idx, '개수'] * unit_w)
-                        to_remove = 0
+                        temp_inv.at[idx, '개수'] -= to_rem
+                        temp_inv.at[idx, '총 무게'] = int(temp_inv.at[idx, '개수'] * u_w)
+                        to_rem = 0
                 st.session_state.inventory = temp_inv.reset_index(drop=True)
                 st.rerun()
-else:
-    st.info("물자를 등록해 주세요.")
