@@ -5,21 +5,22 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 1. 포커스 자동 이동 스크립트 (천지인/쿼티 공통)
-# 엔터 키를 누르면 다음 input 태그로 포커스를 넘겨줍니다.
+# 1. 강화된 포커스 이동 스크립트 (모든 종류의 엔터/이동 신호 감지)
 components.html(
     """
     <script>
-    const inputs = window.parent.document.querySelectorAll('input');
-    inputs.forEach((input, index) => {
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
+    const doc = window.parent.document;
+    doc.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            const active = doc.activeElement;
+            const inputs = Array.from(doc.querySelectorAll('input'));
+            const index = inputs.indexOf(active);
+            if (index > -1 && index < inputs.length - 1) {
                 e.preventDefault();
-                const nextInput = inputs[index + 1];
-                if (nextInput) nextInput.focus();
+                inputs[index + 1].focus();
             }
-        });
-    });
+        }
+    }, true);
     </script>
     """,
     height=0,
@@ -52,10 +53,11 @@ def get_total_display(df_item):
 # --- 메인 화면 ---
 st.title("📋 창고 현황판")
 
-# 2. 물자 등록 창 (입력 흐름 최적화)
+# 2. 물자 등록 창
 with st.expander("➕ 신규 물자 등록", expanded=True):
-    with st.form("input_form", clear_on_submit=False):
-        st.info("엔터나 '다음'을 누르면 아래 칸으로 이동합니다.")
+    # form으로 묶어야 엔터 시 페이지 전체가 흔들리지 않습니다.
+    with st.form("input_form"):
+        st.caption("천지인 유저님: '완료'나 '엔터'를 누르면 다음 칸으로 갑니다.")
         
         name = st.text_input("1. 물품명", key="m_name")
         qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
