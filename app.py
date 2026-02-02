@@ -51,9 +51,8 @@ def get_total_display(df_item):
 
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창 (중복 오류 완전 제거)
+# 1. 물자 등록 창
 with st.expander("➕ 신규 물자 등록", expanded=True):
-    # clear_on_submit을 False로 유지하여 입력값 보존
     with st.form("input_form", clear_on_submit=False):
         name = st.text_input("1. 물품명", key="m_name")
         qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
@@ -63,36 +62,34 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
         
         submit = st.form_submit_button("🚀 창고에 등록하기", use_container_width=True)
         
-        # 버튼을 눌렀을 때만 날짜 검증 실행
         if submit:
             if not name:
-                st.warning("⚠️ 물품명을 적어주세요.")
+                st.warning("⚠️ 물품명을 입력해주세요.")
             elif len(d6) != 6:
-                st.error("❌ 날짜 6자리를 모두 채워주세요.")
+                st.error("❌ 날짜 6자리를 입력해주세요.")
             else:
                 try:
-                    # 날짜 변환 로직 보강
+                    # 날짜 형식 변환
                     yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
-                    mm = d6[2:4]
-                    dd = d6[4:]
+                    mm, dd = d6[2:4], d6[4:]
                     f_dt = f"{yy}-{mm}-{dd}"
-                    
-                    # 실제 날짜인지 최종 확인
-                    valid_date = datetime.strptime(f_dt, "%Y-%m-%d")
+                    datetime.strptime(f_dt, "%Y-%m-%d")
                     
                     new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
                     
-                    # 성공 메시지는 상단 팝업(toast)으로만 깔끔하게 알림
-                    st.toast(f"✅ {name} 등록 성공!")
-                    st.rerun() # 즉시 새로고침하여 에러 잔상 제거
+                    # 요청하신 부분: 등록 성공 시 아주 잠깐 알림 표시
+                    st.toast("✅ 등록되었습니다!")
+                    
+                    # 화면 갱신 (메시지를 보여주기 위해 아주 짧은 지연 후 리런하거나 즉시 리런)
+                    st.rerun()
                 except ValueError:
-                    st.error(f"❌ '{d6}'은(는) 없는 날짜입니다. (월/일 확인)")
+                    st.error("❌ 유효하지 않은 날짜입니다.")
 
 st.divider()
 
-# 2. 검색 및 리스트 (기존과 동일)
+# 2. 검색 및 리스트
 search = st.text_input("🔍 검색", placeholder="물품명 입력...")
 
 if not st.session_state.inventory.empty:
