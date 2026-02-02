@@ -19,27 +19,39 @@ if not st.session_state.inventory.empty:
         st.error("🚨 유통기한 임박!")
         for _, r in urgent.iterrows():
             d = (r['dt'] - today).days
-            txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
+            txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"D+{-d} (만료)")
             st.write(f"⚠️ {r['물품명']} ({int(r['개수'])}{r['단위']}) - {txt} ({r['유통기한']})")
 
-# 2. 물자 등록
+# 2. 물자 등록 (날짜 직접 입력 방식)
 with st.expander("➕ 신규 물자 등록", expanded=False):
     c1, c2, c3 = st.columns([2, 1, 1])
     name = c1.text_input("물품명")
     qty = c2.number_input("개수", min_value=1, step=1, value=1)
-    edate = c3.date_input("유통기한")
+    # 달력 대신 텍스트로 입력 받음
+    date_str = c3.text_input("유통기한 (예: 20260210)", placeholder="숫자 8자리")
+    
     c4, c5 = st.columns(2)
     wgt = c4.number_input("단위당 무게", min_value=0, step=1)
     unit = c5.selectbox("단위", ["g", "kg", "L", "mL"])
+    
     if st.button("🚀 등록하기", use_container_width=True):
-        if name:
-            row = pd.DataFrame([[name, int(qty), edate.strftime('%Y-%m-%d'), int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
-            st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
-            st.rerun()
+        if name and len(date_str) == 8:
+            try:
+                # 숫자를 날짜 형식(YYYY-MM-DD)으로 변환
+                valid_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+                row = pd.DataFrame([[name, int(qty), valid_date, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
+                st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
+                st.rerun()
+            except ValueError:
+                st.error("❌ 날짜 형식이 잘못되었습니다. (예: 20260210)")
+        elif not name:
+            st.warning("물품명을 입력해주세요.")
+        else:
+            st.warning("유통기한 숫자 8자리를 입력해주세요.")
 
 st.divider()
 
-# 3. 현황 리스트 (접기/펴기)
+# 3. 현황 리스트 (접기/펴기) - (이전과 동일)
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
@@ -59,9 +71,9 @@ if not st.session_state.inventory.empty:
             st.table(sub.style.format({"개수": "{:.0f}", "총 무게": "{:.0f}"}))
             
             st.caption(f"📍 {item} 불출")
-            sel_e = st.selectbox("불출할 유통기한", item_df['유통기한'].unique(), key=f"s_{item}")
+            sel_e = st.selectbox("불출 유통기한", item_df['유통기한'].unique(), key=f"s_{item}")
             m_qty = st.number_input("불출 개수", min_value=1, step=1, key=f"q_{item}")
-            if st.button(f"{item} 불출 실행", key=f"b_{item}"):
+            if st.button(f"{item} 불출", key=f"b_{item}"):
                 idx = item_df[item_df['유통기한'] == sel_e].index[0]
                 cur = st.session_state.inventory.at[idx, '개수']
                 uw = st.session_state.inventory.at[idx, '총 무게'] / cur
