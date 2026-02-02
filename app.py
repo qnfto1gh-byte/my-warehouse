@@ -8,25 +8,22 @@ import time
 # 앱 설정
 st.set_page_config(page_title="창고관리", layout="wide")
 
-# [핵심 수정] 4, 5, 7번 해결: 엔터 이동 후에도 0 자동 삭제 및 전체 선택
+# [기능 4, 5, 7, 9] 엔터 이동 시 0 삭제 및 전체 선택 강화 스크립트
 components.html("""
     <script>
     const doc = window.parent.document;
     
-    // 1. 포커스가 들어올 때(클릭 or 엔터 이동) 처리
     doc.addEventListener('focusin', function(e) {
         if (e.target.tagName === 'INPUT' && (e.target.type === 'number' || e.target.inputMode === 'numeric')) {
-            // 값이 "0"이면 즉시 비움
+            // 값이 "0"이면 즉시 비우고, 숫자가 있으면 전체 선택 (엔터 이동 대응)
             if (e.target.value === "0" || e.target.value === 0) {
                 e.target.value = "";
             }
-            // 기존 숫자가 있어도 바로 덮어쓸 수 있게 전체 선택
-            setTimeout(() => { e.target.select(); }, 10);
+            setTimeout(() => { e.target.select(); }, 50);
             e.target.dispatchEvent(new Event('input', { bubbles: true }));
         }
     });
 
-    // 2. 엔터 키로 다음 칸 이동
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.keyCode === 13) {
             const active = doc.activeElement;
@@ -34,7 +31,7 @@ components.html("""
             const index = inputs.indexOf(active);
             if (index > -1 && index < inputs.length - 1) {
                 e.preventDefault();
-                inputs[index + 1].focus(); // 다음 칸으로 포커스 이동 (위의 focusin 이벤트가 자동 실행됨)
+                inputs[index + 1].focus(); 
             }
         }
     }, true);
@@ -71,7 +68,7 @@ def get_total_display(df_item):
 
 st.title("📦 창고관리 시스템")
 
-# [기능 3] 작업로그
+# [기능 3] 작업로그 (접이식)
 with st.expander("🔍 작업로그 보기", expanded=False):
     if not history.empty:
         df_h = history.copy()
@@ -80,7 +77,7 @@ with st.expander("🔍 작업로그 보기", expanded=False):
             st.markdown(f"**📅 {d}**")
             st.table(df_h[df_h['날짜'] == d].sort_values("일시", ascending=False)[["일시", "물품명", "유형", "수량"]])
 
-# [기능 8] 주간 입출표 (정산 보고)
+# [기능 8] 주간 입출표
 with st.expander("📅 주간 입출 정산 보고", expanded=False):
     d_range = st.date_input("정산 기간 선택", value=(today - timedelta(days=7), today))
     if len(d_range) == 2:
@@ -95,37 +92,39 @@ with st.expander("📅 주간 입출 정산 보고", expanded=False):
                     for col in ['입고', '불출']: 
                         if col not in stats: stats[col] = 0
                     st.table(stats[['입고', '불출']])
-                    report_text = f"📋 [정산 보고] {s_d} ~ {e_d}\n"
-                    for item in stats.index:
-                        report_text += f"🔹 {item}: 입고 {stats.loc[item, '입고']} / 불출 {stats.loc[item, '불출']}\n"
-                    st.code(report_text)
                 else: st.warning("기록이 없습니다.")
 
 st.divider()
 
-# [기능 6, 5, 7] 신규 등록 (엔터 이동 시 0 자동삭제 반영)
+# [기능 6, 9] 신규 등록 (날짜 보정 강화)
 with st.expander("➕ 신규 물자 등록", expanded=True):
     with st.form("reg_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         name = c1.text_input("물품명")
         qty = c2.number_input("입고 수량", min_value=0, value=0)
         c3, c4 = st.columns(2)
-        d6 = c3.text_input("유통기한 (YYMMDD)", max_chars=6)
+        d_input = c3.text_input("유통기한 (YYMMDD)", max_chars=6) # [수정] 입력값 처리 유연화
         wgt = c4.number_input("단위당 무게/부피", min_value=0, value=0)
         unit = st.selectbox("단위", ["g", "mL", "kg", "L"])
         
         if st.form_submit_button("🚀 등록하기", use_container_width=True):
-            if name and len(d6) == 6:
+            clean_d = d_input.strip() # 공백 제거
+            if name and len(clean_d) == 6:
                 try:
-                    f_dt = f"20{d6[:2]}-{d6[2:4]}-{d6[4:]}"
+                    # [핵심] 날짜 변환 안정성 강화
+                    f_dt = f"20{clean_d[:2]}-{clean_d[2:4]}-{clean_d[4:]}"
+                    pd.to_datetime(f_dt) # 유효한 날짜인지 검증
+                    
                     new_inv = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], columns=inventory.columns)
                     inventory = pd.concat([inventory, new_inv], ignore_index=True)
                     new_log = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, "입고", int(qty), "정상"]], columns=history.columns)
                     history = pd.concat([history, new_log], ignore_index=True)
+                    
                     conn.update(spreadsheet=SHEET_URL, worksheet="Inventory", data=inventory)
                     conn.update(spreadsheet=SHEET_URL, worksheet="History", data=history)
                     st.success("✅ 등록 완료!"); time.sleep(0.5); st.rerun()
-                except: st.error("❌ 날짜 확인요망")
+                except: st.error("❌ 날짜가 올바르지 않습니다 (예: 260230 등 존재하지 않는 날짜)")
+            else: st.warning("⚠️ 물품명과 유통기한 6자리를 확인하세요.")
 
 st.divider()
 
@@ -142,8 +141,7 @@ if not inventory.empty:
         i_df = i_df.sort_values('dt')
         t_qty = int(i_df['개수'].sum())
         min_d = i_df['dt'].min()
-        # [기능 1] 총 무게 표시
-        with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d} (D-{(min_d-today).days}) | {get_total_display(i_df)}"):
+        with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d} | {get_total_display(i_df)}"):
             st.table(i_df[["개수", "유통기한"]])
             c1, c2 = st.columns([2, 1])
             rem_qty = c1.number_input(f"불출 수량", min_value=1, max_value=t_qty, key=f"del_{item}", value=1)
