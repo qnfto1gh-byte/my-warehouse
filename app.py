@@ -30,7 +30,7 @@ components.html("""
 """, height=0)
 
 # --- 구글 시트 설정 (사용자님의 시트 주소를 꼭 넣어주세요) ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1lKMH5BjjXWaqib_pqeqp_5UXpbc3M1PSDb4nEAoxw-A/edit?usp=drivesdk"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1lKMH5BjjXWaqib_pqeqp_5UXpbc3M1PSDb4nEAoxw-A/edit"
 
 from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
