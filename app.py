@@ -31,31 +31,34 @@ def get_total_display(df_item):
 # --- 메인 화면 시작 ---
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창 (상단 배치)
+# 1. 물자 등록 폼 (Enter/Tab 흐름 최적화)
 with st.expander("➕ 신규 물자 등록", expanded=False):
-    name = st.text_input("물품명", key="n")
-    qty = st.number_input("입고 개수", min_value=1, step=1, key="q")
-    d6 = st.text_input("유통기한 6자리 (YYMMDD)", key="d", max_chars=6)
-    
-    f_dt = ""
-    if len(d6) == 6:
-        try:
-            yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
-            f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
-            datetime.strptime(f_dt, "%Y-%m-%d")
-            st.success(f"날짜 확인: {f_dt}")
-        except:
-            st.error("날짜가 올바르지 않습니다.")
-            f_dt = "error"
-
-    wgt = st.number_input("단위당 무게/부피", min_value=0, step=1, key="w")
-    unit = st.selectbox("단위", ["g", "mL", "kg", "L"], key="u")
-
-    if st.button("🚀 등록 완료", use_container_width=True):
-        if name and len(d6) == 6 and f_dt != "error":
-            row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
-            st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
-            st.rerun()
+    with st.form("input_form", clear_on_submit=True):
+        st.caption("Tip: 입력 후 Tab키나 키보드 '다음' 버튼을 누르면 이동합니다.")
+        name = st.text_input("1. 물품명")
+        qty = st.number_input("2. 입고 개수", min_value=1, step=1)
+        d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6)
+        wgt = st.number_input("4. 단위당 무게/부피 (정수)", min_value=0, step=1)
+        unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"])
+        
+        submit_button = st.form_submit_button("🚀 등록 완료", use_container_width=True)
+        
+        if submit_button:
+            if name and len(d6) == 6:
+                try:
+                    yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
+                    f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
+                    datetime.strptime(f_dt, "%Y-%m-%d")
+                    
+                    row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
+                                       columns=st.session_state.inventory.columns)
+                    st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
+                    st.toast(f"✅ {name} 등록 성공!")
+                    st.rerun()
+                except:
+                    st.error("❌ 날짜가 올바르지 않습니다. (예: 270230 등 존재하지 않는 날짜)")
+            else:
+                st.warning("⚠️ 모든 항목을 정확히 입력해 주세요.")
 
 st.divider()
 
@@ -74,7 +77,7 @@ if not st.session_state.inventory.empty:
             txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
             st.write(f"⚠️ **{r['물품명']}** - {txt} ({r['유통기한']})")
 
-# 4. 리스트 현황
+# 4. 리스트 현황 (수량 지정 불출 포함)
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
@@ -93,12 +96,11 @@ if not st.session_state.inventory.empty:
         with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d}({d_l}) | 총량: {display_total}"):
             st.table(i_df[["개수", "유통기한", "총 무게", "단위"]])
             
-            # --- 수량 불출 로직 ---
             c1, c2 = st.columns([2, 1])
-            rem_qty = c1.number_input(f"불출할 개수", min_value=1, max_value=t_qty, step=1, key=f"q_{item}")
+            rem_qty = c1.number_input(f"불출 개수", min_value=1, max_value=t_qty, step=1, key=f"q_{item}")
             if c2.button(f"불출", key=f"b_{item}", use_container_width=True):
                 to_remove = rem_qty
-                # 유통기한 순으로 정렬된 인덱스 가져오기
+                # 세션 상태 원본 인덱스 사용
                 for idx in i_df.index:
                     if to_remove <= 0: break
                     current_stock = st.session_state.inventory.at[idx, '개수']
@@ -111,7 +113,6 @@ if not st.session_state.inventory.empty:
                         st.session_state.inventory.at[idx, '개수'] -= to_remove
                         st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * unit_w)
                         to_remove = 0
-                
                 st.session_state.inventory = st.session_state.inventory.reset_index(drop=True)
                 st.rerun()
 else:
