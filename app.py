@@ -2,78 +2,55 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# 1. 페이지 설정
-st.set_page_config(page_title="부대 창고 현황판", layout="wide")
+st.set_page_config(page_title="부대 창고", layout="wide")
+st.title("📋 창고 현황판")
 
-st.markdown("# 📋 창고 현황판 (기록용)")
-
-# 2. 데이터 저장 구조 초기화
 if 'inventory' not in st.session_state:
-    st.session_state.inventory = pd.DataFrame(
-        columns=["물품명", "개수", "유통기한", "총 무게", "단위"]
-    )
+    st.session_state.inventory = pd.DataFrame(columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
 
 today = datetime.now().date()
 
-# 3. 유통기한 임박 알림창 (D-Day)
+# 1. 임박 알림 (D-Day)
 if not st.session_state.inventory.empty:
-    df_alert = st.session_state.inventory.copy()
-    df_alert['유통기한_dt'] = pd.to_datetime(df_alert['유통기한']).dt.date
-    limit_date = today + timedelta(days=7)
-    urgent_items = df_alert[df_alert['유통기한_dt'] <= limit_date].sort_values(by='유통기한_dt')
-    
-    if not urgent_items.empty:
-        st.error("🚨 **유통기한 임박 물자 발생!**")
-        for _, row in urgent_items.iterrows():
-            d_day = (row['유통기한_dt'] - today).days
-            d_day_text = f"D-{d_day}" if d_day > 0 else ("오늘 만료" if d_day == 0 else f"D+{-d_day} (만료)")
-            st.write(f"⚠️ **{row['물품명']}** ({int(row['개수'])}{row['단위']}) - **{d_day_text}** ({row['유통기한']})")
-        st.divider()
+    df = st.session_state.inventory.copy()
+    df['dt'] = pd.to_datetime(df['유통기한']).dt.date
+    urgent = df[df['dt'] <= today + timedelta(days=7)].sort_values('dt')
+    if not urgent.empty:
+        st.error("🚨 유통기한 임박!")
+        for _, r in urgent.iterrows():
+            d = (r['dt'] - today).days
+            txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
+            st.write(f"⚠️ {r['물품명']} ({int(r['개수'])}{r['단위']}) - {txt} ({r['유통기한']})")
 
-# 4. 신규 물자 등록 칸
+# 2. 물자 등록
 with st.expander("➕ 신규 물자 등록", expanded=False):
     c1, c2, c3 = st.columns([2, 1, 1])
-    with c1: name = st.text_input("물품명", key="input_name")
-    with c2: qty = st.number_input("입고 개수", min_value=1, step=1, value=1, key="input_qty")
-    with c3: exp_date = st.date_input("유통기한", datetime.now(), key="input_date")
-    
-    c4, c5 = st.columns([1, 1])
-    with c4: weight = st.number_input("단위당 무게 (숫자만)", min_value=0, step=1, value=0, key="input_weight")
-    with c5: unit = st.selectbox("단위", ["g", "kg", "L", "mL"], key="input_unit")
-    
-    if st.button("🚀 창고에 등록하기", use_container_width=True):
+    name = c1.text_input("물품명")
+    qty = c2.number_input("개수", min_value=1, step=1, value=1)
+    edate = c3.date_input("유통기한")
+    c4, c5 = st.columns(2)
+    wgt = c4.number_input("단위당 무게", min_value=0, step=1)
+    unit = c5.selectbox("단위", ["g", "kg", "L", "mL"])
+    if st.button("🚀 등록하기", use_container_width=True):
         if name:
-            new_row = pd.DataFrame([[name, int(qty), exp_date.strftime('%Y-%m-%d'), int(weight * qty), unit]], 
-                                   columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
-            st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-            st.success(f"✅ {name} 등록 완료!")
+            row = pd.DataFrame([[name, int(qty), edate.strftime('%Y-%m-%d'), int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
+            st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
             st.rerun()
 
 st.divider()
 
-# 5. 품목별 요약 및 상세 리스트
-st.subheader("🔍 품목별 현황 (클릭 시 상세 유통기한 확인)")
-
-if st.session_state.inventory.empty:
-    st.info("현재 등록된 물자가 없습니다.")
-else:
-    df_main = st.session_state.inventory.copy()
-    df_main['유통기한_dt'] = pd.to_datetime(df_main['유통기한']).dt.date
+# 3. 현황 리스트 (접기/펴기)
+if not st.session_state.inventory.empty:
+    df_m = st.session_state.inventory.copy()
+    df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
+    search = st.text_input("🔍 물품명 검색")
+    if search: df_m = df_m[df_m['물품명'].str.contains(search, case=False)]
     
-    search_term = st.text_input("물품명 검색", "")
-    if search_term:
-        df_main = df_main[df_main['물품명'].str.contains(search_term, case=False)]
-
-    unique_items = df_main['물품명'].unique()
-
-    for item in unique_items:
-        item_data = df_main[df_main['물품명'] == item].sort_values('유통기한_dt')
-        total_qty = item_data['개수'].sum()
-        total_weight = item_data['총 무게'].sum()
-        earliest_date = item_data['유통기한_dt'].min()
-        unit_type = item_data['단위'].iloc[0]
+    for item in df_m['물품명'].unique():
+        item_df = df_m[df_m['물품명'] == item].sort_values('dt')
+        t_qty, t_wgt = item_df['개수'].sum(), item_df['총 무게'].sum()
+        min_d = item_df['dt'].min()
+        d_val = (min_d - today).days
+        d_lab = f"D-{d_val}" if d_val > 0 else ("오늘" if d_val == 0 else f"만료 D+{-d_val}")
         
-        d_day_val = (earliest_date - today).days
-        d_day_label = f" (D-{d_day_val})" if d_day_val > 0 else (" (오늘!)" if d_day_val == 0 else f" (만료 D+{-d_day_val})")
-
-        with st.expander(f"📦 **{item}** | 총 {int
+        with st.expander(f"📦 {item} | 총 {int(t_qty)}개 | 가장 빠른: {min_d} ({d_lab}) | {
