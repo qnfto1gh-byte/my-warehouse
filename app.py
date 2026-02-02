@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
-import time  # 시간 지연을 위해 추가
+import time
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 포커스 자동 이동 스크립트
+# 포커스 자동 이동 스크립트 (엔터/이동 시 다음 칸으로)
 components.html(
     """
     <script>
@@ -71,26 +71,23 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
             else:
                 try:
                     yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
-                    mm, dd = d6[2:4], d6[4:]
-                    f_dt = f"{yy}-{mm}-{dd}"
+                    f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
                     datetime.strptime(f_dt, "%Y-%m-%d")
                     
                     new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
                     
-                    # --- 수정된 부분: 메시지를 확실히 보여주기 ---
-                    msg = st.success(f"✅ [{name}] {qty}개 등록되었습니다!") # 상단에 초록색 바 표시
-                    time.sleep(1.5) # 1.5초 동안 멈춰서 사용자가 읽게 함
-                    msg.empty() # 메시지 삭제
-                    st.rerun() # 화면 갱신
-                    # ------------------------------------------
+                    # --- 1초 알림 후 리프레시 ---
+                    st.success(f"✅ 등록 완료!") 
+                    time.sleep(1.0) 
+                    st.rerun()
                 except ValueError:
                     st.error("❌ 유효하지 않은 날짜입니다.")
 
 st.divider()
 
-# 2. 검색 및 리스트
+# 2. 검색 및 리스트 현황 (검색/불출 기능 포함)
 search = st.text_input("🔍 검색", placeholder="물품명 입력...")
 
 if not st.session_state.inventory.empty:
