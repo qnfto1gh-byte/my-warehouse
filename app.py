@@ -8,22 +8,19 @@ import time
 # 앱 설정
 st.set_page_config(page_title="창고관리", layout="wide")
 
-# [기능 4, 5, 7, 9] 엔터 이동 시 0 삭제 및 전체 선택 강화 스크립트
+# [기능 4, 5, 7, 9] 엔터 시 0 삭제 및 자동 전체 선택 (반응속도 최적화)
 components.html("""
     <script>
     const doc = window.parent.document;
-    
     doc.addEventListener('focusin', function(e) {
         if (e.target.tagName === 'INPUT' && (e.target.type === 'number' || e.target.inputMode === 'numeric')) {
-            // 값이 "0"이면 즉시 비우고, 숫자가 있으면 전체 선택 (엔터 이동 대응)
             if (e.target.value === "0" || e.target.value === 0) {
                 e.target.value = "";
             }
-            setTimeout(() => { e.target.select(); }, 50);
+            setTimeout(() => { e.target.select(); }, 30);
             e.target.dispatchEvent(new Event('input', { bubbles: true }));
         }
     });
-
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.keyCode === 13) {
             const active = doc.activeElement;
@@ -38,8 +35,8 @@ components.html("""
     </script>
 """, height=0)
 
-# --- 구글 시트 연결 ---
-SHEET_URL = "여기에_본인의_구글_시트_주소를_복사해서_넣으세요"
+# --- 구글 시트 연동 ---
+SHEET_URL = "여기에_본인의_구글_시트_주소를_넣으세요"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
@@ -55,7 +52,7 @@ def load_data():
 inventory, history = load_data()
 today = datetime.now().date()
 
-# [기능 1] 총 무게 표시
+# [기능 1] 총 무게 계산
 def get_total_display(df_item):
     total_val = 0
     unit_type = "" 
@@ -68,7 +65,7 @@ def get_total_display(df_item):
 
 st.title("📦 창고관리 시스템")
 
-# [기능 3] 작업로그 (접이식)
+# [기능 3] 작업로그
 with st.expander("🔍 작업로그 보기", expanded=False):
     if not history.empty:
         df_h = history.copy()
@@ -77,7 +74,7 @@ with st.expander("🔍 작업로그 보기", expanded=False):
             st.markdown(f"**📅 {d}**")
             st.table(df_h[df_h['날짜'] == d].sort_values("일시", ascending=False)[["일시", "물품명", "유형", "수량"]])
 
-# [기능 8] 주간 입출표
+# [기능 8] 주간 정산 보고
 with st.expander("📅 주간 입출 정산 보고", expanded=False):
     d_range = st.date_input("정산 기간 선택", value=(today - timedelta(days=7), today))
     if len(d_range) == 2:
@@ -96,35 +93,41 @@ with st.expander("📅 주간 입출 정산 보고", expanded=False):
 
 st.divider()
 
-# [기능 6, 9] 신규 등록 (날짜 보정 강화)
+# [기능 6, 9] 신규 등록 (날짜 처리 로직 대폭 강화)
 with st.expander("➕ 신규 물자 등록", expanded=True):
     with st.form("reg_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         name = c1.text_input("물품명")
         qty = c2.number_input("입고 수량", min_value=0, value=0)
         c3, c4 = st.columns(2)
-        d_input = c3.text_input("유통기한 (YYMMDD)", max_chars=6) # [수정] 입력값 처리 유연화
+        d_raw = c3.text_input("유통기한 (YYMMDD)", max_chars=6)
         wgt = c4.number_input("단위당 무게/부피", min_value=0, value=0)
         unit = st.selectbox("단위", ["g", "mL", "kg", "L"])
         
         if st.form_submit_button("🚀 등록하기", use_container_width=True):
-            clean_d = d_input.strip() # 공백 제거
-            if name and len(clean_d) == 6:
+            d_clean = "".join(filter(str.isdigit, d_raw)) # 숫자만 추출
+            if name and len(d_clean) == 6:
                 try:
-                    # [핵심] 날짜 변환 안정성 강화
-                    f_dt = f"20{clean_d[:2]}-{clean_d[2:4]}-{clean_d[4:]}"
-                    pd.to_datetime(f_dt) # 유효한 날짜인지 검증
+                    # 날짜 조립 (YYMMDD -> 20YY-MM-DD)
+                    year, month, day_val = f"20{d_clean[:2]}", d_clean[2:4], d_clean[4:]
+                    f_dt_str = f"{year}-{month}-{day_val}"
+                    # 실제 존재하는 날짜인지 체크
+                    f_dt_obj = datetime.strptime(f_dt_str, "%Y-%m-%d").date()
                     
-                    new_inv = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], columns=inventory.columns)
+                    new_inv = pd.DataFrame([[name, int(qty), f_dt_str, int(wgt*qty), unit]], columns=inventory.columns)
                     inventory = pd.concat([inventory, new_inv], ignore_index=True)
                     new_log = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, "입고", int(qty), "정상"]], columns=history.columns)
                     history = pd.concat([history, new_log], ignore_index=True)
                     
                     conn.update(spreadsheet=SHEET_URL, worksheet="Inventory", data=inventory)
                     conn.update(spreadsheet=SHEET_URL, worksheet="History", data=history)
-                    st.success("✅ 등록 완료!"); time.sleep(0.5); st.rerun()
-                except: st.error("❌ 날짜가 올바르지 않습니다 (예: 260230 등 존재하지 않는 날짜)")
-            else: st.warning("⚠️ 물품명과 유통기한 6자리를 확인하세요.")
+                    st.success(f"✅ {name} 등록 완료!"); time.sleep(0.5); st.rerun()
+                except ValueError:
+                    st.error(f"❌ '{d_raw}'는 달력에 없는 날짜입니다. (예: 9월 31일 등)")
+                except Exception as e:
+                    st.error(f"❌ 에러 발생: {e}")
+            else:
+                st.warning("⚠️ 물품명과 유통기한(6자리 숫자)을 확인하세요.")
 
 st.divider()
 
