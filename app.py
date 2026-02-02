@@ -28,12 +28,16 @@ def get_total_display(df_item):
         final_unit = "mL" if base_unit_type == "L" else "g"
         return f"{int(total_raw_ml_g)}{final_unit}"
 
-# --- 사이드바: 입력 ---
-with st.sidebar:
-    st.header("➕ 신규 물자 등록")
+# --- 메인 화면 시작 ---
+st.title("📋 창고 현황판")
+
+# 1. 물자 등록 창 (메인 상단으로 이동 - 키보드 가림 방지)
+# expander를 사용하여 평소에는 접어두되, 열었을 때 상단에 위치하여 키보드 위로 잘 보이게 함
+with st.expander("➕ 신규 물자 등록 (여기를 눌러 입력하세요)", expanded=False):
+    # 입력 칸들을 한 줄씩 배치하여 모바일에서 클릭하기 쉽게 함
     name = st.text_input("물품명", key="n")
     qty = st.number_input("개수", min_value=1, step=1, key="q")
-    d6 = st.text_input("유통기한 6자리", placeholder="270917", key="d", max_chars=6)
+    d6 = st.text_input("유통기한 6자리 (예: 270917)", key="d", max_chars=6)
     
     f_dt = ""
     if len(d6) == 6:
@@ -41,24 +45,26 @@ with st.sidebar:
             yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
             f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
             datetime.strptime(f_dt, "%Y-%m-%d")
-            st.caption(f"✅ 날짜 확인: {f_dt}")
+            st.success(f"날짜 확인: {f_dt}")
         except:
-            st.caption("❌ 날짜 오류")
+            st.error("날짜가 올바르지 않습니다.")
             f_dt = "error"
 
     wgt = st.number_input("단위당 무게/부피", min_value=0, step=1, key="w")
     unit = st.selectbox("단위", ["g", "mL", "kg", "L"], key="u")
 
-    if st.button("🚀 등록하기", use_container_width=True):
+    if st.button("🚀 등록 완료", use_container_width=True):
         if name and len(d6) == 6 and f_dt != "error":
             row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], columns=st.session_state.inventory.columns)
             st.session_state.inventory = pd.concat([st.session_state.inventory, row], ignore_index=True)
             st.rerun()
 
-# --- 메인 화면 ---
-st.title("📋 창고 현황판")
+st.divider()
 
-# 1. 임박 알림
+# 2. 검색창
+search = st.text_input("🔍 검색어 입력", placeholder="물품명을 입력하세요...")
+
+# 3. 임박 알림 (7일 이내)
 if not st.session_state.inventory.empty:
     df_u = st.session_state.inventory.copy()
     df_u['dt'] = pd.to_datetime(df_u['유통기한']).dt.date
@@ -70,41 +76,33 @@ if not st.session_state.inventory.empty:
             txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
             st.write(f"⚠️ **{r['물품명']}** - {txt} ({r['유통기한']})")
 
-st.divider()
-
-# 2. 검색창 추가
-search = st.text_input("🔍 찾으시는 물품명을 입력하세요", placeholder="검색어 입력...")
-
-# 3. 리스트 현황
+# 4. 리스트 현황
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
     
-    # 검색 필터 적용
-    target_items = df_m['물품명'].unique()
-    if search:
-        target_items = [i for i in target_items if search.lower() in i.lower()]
+    all_items = df_m['물품명'].unique()
+    target_items = [i for i in all_items if search.lower() in i.lower()] if search else all_items
 
-    if not target_items:
-        st.warning(f"'{search}' 검색 결과가 없습니다.")
-    else:
-        for item in target_items:
-            i_df = df_m[df_m['물품명'] == item].sort_values('dt')
-            t_qty, min_d = int(i_df['개수'].sum()), i_df['dt'].min()
-            display_total = get_total_display(i_df)
-            d_v = (min_d - today).days
-            d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
-            
-            with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d}({d_l}) | 총량: {display_total}"):
-                st.table(i_df[["개수", "유통기한", "총 무게", "단위"]])
-                if st.button(f"{item} 1개 불출", key=f"del_{item}"):
-                    idx = i_df.index[0]
-                    if st.session_state.inventory.at[idx, '개수'] > 1:
-                        u_w = st.session_state.inventory.at[idx, '총 무게'] / st.session_state.inventory.at[idx, '개수']
-                        st.session_state.inventory.at[idx, '개수'] -= 1
-                        st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * u_w)
-                    else:
-                        st.session_state.inventory = st.session_state.inventory.drop(idx).reset_index(drop=True)
-                    st.rerun()
+    for item in target_items:
+        i_df = df_m[df_m['물품명'] == item].sort_values('dt')
+        t_qty = int(i_df['개수'].sum())
+        min_d = i_df['dt'].min()
+        display_total = get_total_display(i_df)
+        
+        d_v = (min_d - today).days
+        d_l = f"D-{d_v}" if d_v > 0 else ("오늘" if d_v == 0 else f"만료 D+{-d_v}")
+        
+        with st.expander(f"📦 {item} | 총 {t_qty}개 | {min_d}({d_l}) | 총량: {display_total}"):
+            st.table(i_df[["개수", "유통기한", "총 무게", "단위"]])
+            if st.button(f"{item} 1개 불출", key=f"del_{item}"):
+                idx = i_df.index[0]
+                if st.session_state.inventory.at[idx, '개수'] > 1:
+                    u_w = st.session_state.inventory.at[idx, '총 무게'] / st.session_state.inventory.at[idx, '개수']
+                    st.session_state.inventory.at[idx, '개수'] -= 1
+                    st.session_state.inventory.at[idx, '총 무게'] = int(st.session_state.inventory.at[idx, '개수'] * u_w)
+                else:
+                    st.session_state.inventory = st.session_state.inventory.drop(idx).reset_index(drop=True)
+                st.rerun()
 else:
-    st.info("왼쪽 사이드바에서 물자를 등록해 주세요.")
+    st.info("상단 '신규 물자 등록'을 눌러 물품을 추가해 주세요.")
