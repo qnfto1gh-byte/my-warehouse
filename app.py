@@ -1,8 +1,29 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="부대 창고", layout="wide")
+
+# 1. 포커스 자동 이동 스크립트 (천지인/쿼티 공통)
+# 엔터 키를 누르면 다음 input 태그로 포커스를 넘겨줍니다.
+components.html(
+    """
+    <script>
+    const inputs = window.parent.document.querySelectorAll('input');
+    inputs.forEach((input, index) => {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const nextInput = inputs[index + 1];
+                if (nextInput) nextInput.focus();
+            }
+        });
+    });
+    </script>
+    """,
+    height=0,
+)
 
 if 'inventory' not in st.session_state:
     st.session_state.inventory = pd.DataFrame(columns=["물품명", "개수", "유통기한", "총 무게", "단위"])
@@ -31,62 +52,45 @@ def get_total_display(df_item):
 # --- 메인 화면 ---
 st.title("📋 창고 현황판")
 
-# 1. 물자 등록 창 (모바일 최적화 배치)
+# 2. 물자 등록 창 (입력 흐름 최적화)
 with st.expander("➕ 신규 물자 등록", expanded=True):
-    # form을 사용하되 순차적 입력을 유도
-    with st.form("input_form"):
-        st.write("입력 후 키보드의 '다음'을 눌러 이동하세요.")
+    with st.form("input_form", clear_on_submit=False):
+        st.info("엔터나 '다음'을 누르면 아래 칸으로 이동합니다.")
         
-        # 칸들을 세로로 배치하여 모바일에서 '다음' 버튼이 잘 작동하게 함
-        i_name = st.text_input("1. 물품명 (예: 생수)", key="m_name")
-        i_qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
-        i_d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6, key="m_date")
-        i_wgt = st.number_input("4. 단위당 무게/부피 (숫자만)", min_value=0, step=1, key="m_wgt")
-        i_unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"], key="m_unit")
+        name = st.text_input("1. 물품명", key="m_name")
+        qty = st.number_input("2. 입고 개수", min_value=1, step=1, key="m_qty")
+        d6 = st.text_input("3. 유통기한 6자리 (YYMMDD)", max_chars=6, key="m_date")
+        wgt = st.number_input("4. 단위당 무게/부피 (숫자만)", min_value=0, step=1, key="m_wgt")
+        unit = st.selectbox("5. 단위", ["g", "mL", "kg", "L"], key="m_unit")
         
-        # 제출 버튼
-        submit = st.form_submit_button("🚀 등록 완료", use_container_width=True)
+        submit = st.form_submit_button("🚀 창고에 등록하기", use_container_width=True)
         
         if submit:
-            if i_name and len(i_d6) == 6:
+            if name and len(d6) == 6:
                 try:
-                    yy = "20" + i_d6[:2] if int(i_d6[:2]) < 80 else "19" + i_d6[:2]
-                    f_dt = yy + "-" + i_d6[2:4] + "-" + i_d6[4:]
+                    yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
+                    f_dt = f"{yy}-{d6[2:4]}-{d6[4:]}"
                     datetime.strptime(f_dt, "%Y-%m-%d")
                     
-                    new_row = pd.DataFrame([[i_name, int(i_qty), f_dt, int(i_wgt*i_qty), i_unit]], 
+                    new_row = pd.DataFrame([[name, int(qty), f_dt, int(wgt*qty), unit]], 
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
-                    st.success(f"✅ {i_name} 등록!")
+                    st.success(f"✅ {name} 등록 완료!")
                     st.rerun()
                 except:
-                    st.error("날짜를 확인해주세요 (예: 250531)")
+                    st.error("날짜를 확인해주세요.")
             else:
-                st.warning("항목을 다 채워주세요.")
+                st.warning("모든 정보를 입력해주세요.")
 
 st.divider()
 
-# 2. 검색창
+# 3. 검색 및 리스트
 search = st.text_input("🔍 검색", placeholder="물품명 검색...")
 
-# 3. 임박 알림 (7일 이내)
-if not st.session_state.inventory.empty:
-    df_u = st.session_state.inventory.copy()
-    df_u['dt'] = pd.to_datetime(df_u['유통기한']).dt.date
-    urg = df_u[df_u['dt'] <= today + timedelta(days=7)].sort_values('dt')
-    if not urg.empty:
-        st.error("🚨 유통기한 임박")
-        for i, r in urg.iterrows():
-            d = (r['dt'] - today).days
-            txt = f"D-{d}" if d > 0 else ("오늘" if d == 0 else f"만료 D+{-d}")
-            st.write(f"⚠️ **{r['물품명']}** - {txt} ({r['유통기한']})")
-
-# 4. 현황 리스트
 if not st.session_state.inventory.empty:
     df_m = st.session_state.inventory.copy()
     df_m['dt'] = pd.to_datetime(df_m['유통기한']).dt.date
     
-    # 검색 필터
     items = [i for i in df_m['물품명'].unique() if search.lower() in i.lower()]
 
     for item in items:
