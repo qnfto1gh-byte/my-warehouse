@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
+import time  # 시간 지연을 위해 추가
 
 st.set_page_config(page_title="부대 창고", layout="wide")
 
-# 포커스 자동 이동 스크립트 (천지인/쿼티 공통)
+# 포커스 자동 이동 스크립트
 components.html(
     """
     <script>
@@ -69,7 +70,6 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                 st.error("❌ 날짜 6자리를 입력해주세요.")
             else:
                 try:
-                    # 날짜 형식 변환
                     yy = "20" + d6[:2] if int(d6[:2]) < 80 else "19" + d6[:2]
                     mm, dd = d6[2:4], d6[4:]
                     f_dt = f"{yy}-{mm}-{dd}"
@@ -79,11 +79,12 @@ with st.expander("➕ 신규 물자 등록", expanded=True):
                                        columns=st.session_state.inventory.columns)
                     st.session_state.inventory = pd.concat([st.session_state.inventory, new_row], ignore_index=True)
                     
-                    # 요청하신 부분: 등록 성공 시 아주 잠깐 알림 표시
-                    st.toast("✅ 등록되었습니다!")
-                    
-                    # 화면 갱신 (메시지를 보여주기 위해 아주 짧은 지연 후 리런하거나 즉시 리런)
-                    st.rerun()
+                    # --- 수정된 부분: 메시지를 확실히 보여주기 ---
+                    msg = st.success(f"✅ [{name}] {qty}개 등록되었습니다!") # 상단에 초록색 바 표시
+                    time.sleep(1.5) # 1.5초 동안 멈춰서 사용자가 읽게 함
+                    msg.empty() # 메시지 삭제
+                    st.rerun() # 화면 갱신
+                    # ------------------------------------------
                 except ValueError:
                     st.error("❌ 유효하지 않은 날짜입니다.")
 
