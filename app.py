@@ -1,116 +1,94 @@
-import streamlit as st
-import datetime
+Streamlit Warehouse Management App (Big / Small Warehouse)
 
-st.set_page_config(page_title="창고 재고 관리", layout="centered")
+All users equal, no admin, correction("정정") only, full logs
 
-# -----------------------
-# 세션 안전 초기화 (최중요)
-# -----------------------
-if "items" not in st.session_state or st.session_state.items is None:
-    st.session_state.items = []
+import streamlit as st import pandas as pd from datetime import datetime, date
 
-items = st.session_state.items
-today = datetime.date.today()
+st.set_page_config(page_title="물류 현황판", layout="wide")
 
-st.title("창고 재고 관리 시스템")
+------------------ Session State Init ------------------
 
-# -----------------------
-# 현황판 (항상 표시)
-# -----------------------
-st.subheader("창고 현황판")
+if "big" not in st.session_state: st.session_state.big = pd.DataFrame(columns=["품목", "수량", "유통기한"])
 
-big_items = [i for i in items if i.get("warehouse") == "큰창고"]
-small_items = [i for i in items if i.get("warehouse") == "작은창고"]
+if "small" not in st.session_state: st.session_state.small = pd.DataFrame(columns=["품목", "수량", "유통기한"])
 
-def total_count(data):
-    return sum(i.get("count", 0) for i in data)
+if "logs" not in st.session_state: st.session_state.logs = pd.DataFrame(columns=[ "시간", "사용자", "창고", "행동", "품목", "수량", "유통기한", "비고" ])
 
-danger_days = 7
-danger_items = [
-    i for i in items
-    if (i.get("expire") - today).days <= danger_days
-]
+------------------ Helpers ------------------
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric("큰창고 품목 수", len(big_items))
-    st.metric("큰창고 총 개수", total_count(big_items))
-with c2:
-    st.metric("작은창고 품목 수", len(small_items))
-    st.metric("작은창고 총 개수", total_count(small_items))
-with c3:
-    st.metric("임박 품목", len(danger_items))
+def log(user, wh, action, item, qty, exp, note=""): st.session_state.logs.loc[len(st.session_state.logs)] = [ datetime.now(), user, wh, action, item, qty, exp, note ]
 
-st.divider()
+def expiry_color(d): if pd.isna(d): return "" days = (d - date.today()).days if days <= 3: return "background-color:#ffb3b3"  # red elif days <= 7: return "background-color:#ffd699"  # orange return ""
 
-# -----------------------
-# 재고 추가
-# -----------------------
-st.subheader("재고 등록")
+------------------ Header ------------------
 
-name = st.text_input("품목명")
-warehouse = st.selectbox("창고 선택", ["큰창고", "작은창고"])
-count = st.number_input("개수", min_value=1, step=1)
-expire = st.date_input("유통기한", min_value=today)
+st.title("📦 물류 관리 시스템")
 
-if st.button("추가"):
-    items.append({
-        "name": name,
-        "warehouse": warehouse,
-        "count": int(count),
-        "expire": expire
-    })
-    st.success("등록 완료")
-    st.experimental_rerun()
+user = st.text_input("사용자 이름", value="") mode = st.toggle("📊 현황판 모드")
 
-# -----------------------
-# 재고 목록
-# -----------------------
-st.subheader("재고 현황")
+warehouse_tab = st.radio("창고 선택", ["큰창고", "작은창고"], horizontal=True)
 
-if not items:
-    st.info("재고 없음")
-else:
-    for idx in range(len(items)):
-        item = items[idx]
-        remain = (item["expire"] - today).days
+------------------ Big Warehouse ------------------
 
-        # 임박 강조 (빨간색)
-        if remain <= danger_days:
-            st.markdown(
-                f"""
-                <div style="border:2px solid red;
-                            padding:10px;
-                            border-radius:6px;
-                            background-color:#ffe6e6;">
-                <b>유통기한 임박</b><br>
-                창고: {item['warehouse']}<br>
-                품목: {item['name']}<br>
-                개수: {item['count']}<br>
-                유통기한: {item['expire']} ({remain}일)
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        else:
-            st.write(
-                f"[{item['warehouse']}] {item['name']} | "
-                f"{item['count']}개 | {item['expire']} ({remain}일)"
-            )
+if warehouse_tab == "큰창고": st.subheader("🏢 큰 창고")
 
-        # -----------------------
-        # 출고 (개수 차감만)
-        # -----------------------
-        out_cnt = st.number_input(
-            f"{item['name']} 출고 개수",
-            min_value=0,
-            max_value=item["count"],
-            step=1,
-            key=f"out_{idx}"
-        )
+if not mode:
+    with st.expander("➕ 입고"):
+        item = st.text_input("품목명", key="b_in_item")
+        qty = st.number_input("수량", min_value=1, step=1, key="b_in_qty")
+        exp = st.date_input("유통기한", key="b_in_exp")
+        if st.button("입고 실행"):
+            st.session_state.big.loc[len(st.session_state.big)] = [item, qty, exp]
+            log(user, "큰창고", "입고", item, qty, exp)
+            st.success("입고 완료")
 
-        if st.button("출고", key=f"btn_{idx}"):
-            item["count"] -= out_cnt
-            if item["count"] <= 0:
-                items.pop(idx)
-            st.experimental_rerun()
+    with st.expander("📤 불출 → 작은창고"):
+        idx = st.selectbox("불출 품목", st.session_state.big.index,
+                           format_func=lambda x: st.session_state.big.loc[x, "품목"])
+        out_qty = st.number_input("불출 수량", min_value=1, step=1)
+        if st.button("불출"):
+            row = st.session_state.big.loc[idx]
+            st.session_state.big.at[idx, "수량"] -= out_qty
+            st.session_state.small.loc[len(st.session_state.small)] = [
+                row["품목"], out_qty, row["유통기한"]
+            ]
+            log(user, "큰창고", "불출", row["품목"], out_qty, row["유통기한"], "작은창고 이동")
+            st.success("불출 완료")
+
+styled = st.session_state.big.style.applymap(expiry_color, subset=["유통기한"])
+st.dataframe(styled, use_container_width=True)
+
+------------------ Small Warehouse ------------------
+
+else: st.subheader("🧺 작은 창고")
+
+if not mode:
+    with st.expander("➕ 물류 추가"):
+        item = st.text_input("품목명", key="s_in_item")
+        qty = st.number_input("수량", min_value=1, step=1, key="s_in_qty")
+        exp = st.date_input("유통기한", key="s_in_exp")
+        if st.button("추가"):
+            st.session_state.small.loc[len(st.session_state.small)] = [item, qty, exp]
+            log(user, "작은창고", "추가", item, qty, exp)
+            st.success("추가 완료")
+
+    with st.expander("📉 소비"):
+        idx = st.selectbox("소비 품목", st.session_state.small.index,
+                           format_func=lambda x: st.session_state.small.loc[x, "품목"])
+        use_qty = st.number_input("소비 수량", min_value=1, step=1)
+        if st.button("소비"):
+            row = st.session_state.small.loc[idx]
+            st.session_state.small.at[idx, "수량"] -= use_qty
+            log(user, "작은창고", "소비", row["품목"], use_qty, row["유통기한"])
+            st.success("소비 완료")
+
+styled = st.session_state.small.style.applymap(expiry_color, subset=["유통기한"])
+st.dataframe(styled, use_container_width=True)
+
+------------------ Logs ------------------
+
+st.divider() st.subheader("📜 기록 조회")
+
+start = st.date_input("시작 날짜", value=date.today()) end = st.date_input("종료 날짜", value=date.today())
+
+mask = (st.session_state.logs["시간"].dt.date >= start) & (st.session_state.logs["시간"].dt.date <= end) st.dataframe(st.session_state.logs[mask], use_container_width=True)
