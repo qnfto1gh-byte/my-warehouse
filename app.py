@@ -86,6 +86,18 @@ def show_table(df):
 with tab1:
     st.subheader("🏭 큰창고")
 
+items = st.session_state.inventory[
+    st.session_state.inventory["warehouse"] == "big"
+]
+
+if items.empty:
+    st.info("정정할 재고가 없습니다.")
+else:
+    target_idx = st.selectbox(
+        "정정할 물품",
+        items.index,
+        format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}"
+    )
     if not board_mode:
         with st.form("big_in"):
             name = st.text_input("물품명")
