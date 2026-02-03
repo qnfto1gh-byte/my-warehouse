@@ -70,7 +70,7 @@ def show_inventory(df, warehouse, search_text=""):
             st.dataframe(i_df[["quantity","unit","weight_per_unit","expire_date"]].style.applymap(color_expiry, subset=["expire_date"]), use_container_width=True)
 
 # ------------------------
-# 큰창고
+# 큰창고 탭
 # ------------------------
 with tab1:
     st.subheader("🏭 큰창고")
@@ -79,42 +79,43 @@ with tab1:
     search = st.text_input("🔍 물품 검색 (큰창고)", key="search_big")
     show_inventory(items, warehouse, search)
 
-    if not st.session_state.inventory.empty or len(items):
-        # 입고
-        with st.form("big_in"):
-            st.write("📥 입고")
-            name = st.text_input("물품명", key="big_in_name")
-            qty = st.number_input("수량",1,1,key="big_in_qty")
-            unit = st.selectbox("단위", ["g","kg","mL","L"], key="big_in_unit")
-            wpu = st.number_input("단위당 무게",0,1,key="big_in_w")
-            exp = st.date_input("유통기한", key="big_in_exp")
-            if st.form_submit_button("입고"):
-                st.session_state.inventory.loc[len(st.session_state.inventory)] = [warehouse,name,unit,wpu,qty,exp,datetime.now()]
-                log("입고", warehouse, warehouse, name, qty, exp)
-                st.success(f"{name} 입고 완료")
+    # --- 입고 form ---
+    with st.form("big_in"):
+        st.write("📥 입고")
+        name = st.text_input("물품명", key="big_in_name")
+        qty = st.number_input("수량",1,1,key="big_in_qty")
+        unit = st.selectbox("단위", ["g","kg","mL","L"], key="big_in_unit")
+        wpu = st.number_input("단위당 무게",0,1,key="big_in_w")
+        exp = st.date_input("유통기한", key="big_in_exp")
+        if st.form_submit_button("입고"):
+            st.session_state.inventory.loc[len(st.session_state.inventory)] = [
+                warehouse, name, unit, wpu, qty, exp, datetime.now()
+            ]
+            log("입고", warehouse, warehouse, name, qty, exp)
+            st.success(f"{name} 입고 완료")
 
-        # 불출 → 작은창고
-        if not items.empty:
-            with st.form("big_out"):
-                st.write("📤 불출 → 작은창고")
-                out_name = st.selectbox("불출 물품", items["item_name"].unique(), key="big_out_name")
-                out_qty = st.number_input("불출 수량",1,1,key="big_out_qty")
-                if st.form_submit_button("불출"):
-                    filtered = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==out_name)]
-                    if not filtered.empty:
-                        idx = filtered["expire_date"].idxmin()
-                        out_exp = st.session_state.inventory.loc[idx,"expire_date"]
-                        st.session_state.inventory.loc[idx,"quantity"] -= out_qty
-                        if st.session_state.inventory.loc[idx,"quantity"]<=0:
-                            st.session_state.inventory = st.session_state.inventory.drop(idx)
-                        st.session_state.inventory.loc[len(st.session_state.inventory)] = ["small", out_name, filtered.loc[idx,"unit"], filtered.loc[idx,"weight_per_unit"], out_qty, out_exp, datetime.now()]
-                        log("불출", warehouse, "small", out_name, out_qty, out_exp, "작은창고 이동")
-                        st.success(f"{out_name} 불출 완료")
-                    else:
-                        st.error(f"{out_name} 재고가 없습니다.")
+    # --- 불출 → 작은창고 ---
+    if not items.empty:
+        with st.form("big_out"):
+            st.write("📤 불출 → 작은창고")
+            out_name = st.selectbox("불출 물품", items["item_name"].unique(), key="big_out_name")
+            out_qty = st.number_input("불출 수량",1,1,key="big_out_qty")
+            if st.form_submit_button("불출"):
+                filtered = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==out_name)]
+                if not filtered.empty:
+                    idx = filtered["expire_date"].idxmin()
+                    out_exp = st.session_state.inventory.loc[idx,"expire_date"]
+                    st.session_state.inventory.loc[idx,"quantity"] -= out_qty
+                    if st.session_state.inventory.loc[idx,"quantity"]<=0:
+                        st.session_state.inventory = st.session_state.inventory.drop(idx)
+                    st.session_state.inventory.loc[len(st.session_state.inventory)] = ["small", out_name, filtered.loc[idx,"unit"], filtered.loc[idx,"weight_per_unit"], out_qty, out_exp, datetime.now()]
+                    log("불출", warehouse, "small", out_name, out_qty, out_exp, "작은창고 이동")
+                    st.success(f"{out_name} 불출 완료")
+                else:
+                    st.error(f"{out_name} 재고가 없습니다.")
 
 # ------------------------
-# 작은창고
+# 작은창고 탭
 # ------------------------
 with tab2:
     st.subheader("📦 작은창고")
