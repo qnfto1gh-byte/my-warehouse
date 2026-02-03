@@ -4,6 +4,29 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="창고 재고 관리", layout="wide")
 
+inventory_columns = [
+    "warehouse",        # big / small
+    "item_name",
+    "unit",
+    "weight_per_unit",
+    "quantity",
+    "expire_date",
+    "created_at"
+]log_columns = [
+    "timestamp",
+    "user",
+    "action",          # 입고 / 출고 / 이동 / 정정
+    "warehouse_from",
+    "warehouse_to",
+    "item_name",
+    "quantity",
+    "expire_date",
+    "note"
+]if "inventory" not in st.session_state:
+    st.session_state.inventory = pd.DataFrame(columns=inventory_columns)
+
+if "logs" not in st.session_state:
+    st.session_state.logs = pd.DataFrame(columns=log_columns)
 # ------------------------
 # 세션 초기화
 # ------------------------
