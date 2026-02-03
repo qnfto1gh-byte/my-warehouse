@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="창고 재고 관리", layout="wide")
 
 # ------------------------
-# 세션 초기화 (빈 데이터프레임 포함)
+# 세션 초기화
 # ------------------------
 if "inventory" not in st.session_state:
     st.session_state.inventory = pd.DataFrame(columns=[
@@ -65,14 +65,14 @@ def show_inventory(df, warehouse):
         return
     for item in df["item_name"].unique():
         if item in st.session_state.hidden_items and board_mode:
-            continue  # 숨긴 항목은 현황판 모드에서 안보임
+            continue  # 현황판 모드에서 숨김
         i_df = df[df["item_name"]==item]
         total_w = compute_total_weight(i_df)
         earliest_exp = i_df["expire_date"].min()
         with st.expander(f"{item} | 총 {i_df['quantity'].sum()}개 | {total_w} | 제일 빠른 유통기한: {earliest_exp}"):
             st.dataframe(i_df[["quantity","unit","weight_per_unit","expire_date"]].style.applymap(color_expiry, subset=["expire_date"]), use_container_width=True)
             if board_mode:
-                hide = st.checkbox("현황판에서 숨기기", key=f"hide_{warehouse}_{item}")
+                hide = st.checkbox("현황판에서 숨기기", key=f"hide_{warehouse}_{item}", label_visibility="visible")
                 if hide: st.session_state.hidden_items.add(item)
                 elif item in st.session_state.hidden_items:
                     st.session_state.hidden_items.remove(item)
@@ -90,10 +90,14 @@ with tab1:
     # 정정
     st.divider(); st.subheader("✏️ 재고 정정 (큰창고)")
     if not items.empty:
-        target_idx = st.selectbox("정정할 물품", items.index, format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}")
-        new_qty = st.number_input("정정 후 수량", min_value=0, value=int(items.loc[target_idx,"quantity"]))
-        new_exp = st.date_input("정정 후 유통기한", value=pd.to_datetime(items.loc[target_idx,"expire_date"]))
-        note = st.text_input("정정 사유 (선택)", key="note_big")
+        target_idx = st.selectbox(
+            "정정할 물품", items.index,
+            format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}",
+            key="big_correct"
+        )
+        new_qty = st.number_input("정정 후 수량", min_value=0, value=int(items.loc[target_idx,"quantity"]), step=1, key="big_correct_qty")
+        new_exp = st.date_input("정정 후 유통기한", value=pd.to_datetime(items.loc[target_idx,"expire_date"]), key="big_correct_exp")
+        note = st.text_input("정정 사유 (선택)", key="big_correct_note")
         if st.button("정정 실행 (큰창고)"):
             before = items.loc[target_idx]
             st.session_state.inventory.loc[target_idx,"quantity"]=new_qty
@@ -103,6 +107,7 @@ with tab1:
 
     if not board_mode:
         st.divider(); st.subheader("📥 입고 / 📤 불출")
+        # 입고
         with st.form("big_in"):
             name = st.text_input("물품명", key="big_in_name")
             qty = st.number_input("수량", 1, 1, key="big_in_qty")
@@ -114,20 +119,26 @@ with tab1:
                 log("입고", warehouse, warehouse, name, qty, exp)
                 st.success(f"{name} 입고 완료")
 
+        # 불출 → 작은창고
         if not items.empty:
             with st.form("big_out"):
                 out_name = st.selectbox("불출 물품", items["item_name"].unique(), key="big_out_name")
                 out_qty = st.number_input("불출 수량",1,1,key="big_out_qty")
                 if st.form_submit_button("불출 → 작은창고"):
-                    idx = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==out_name)].index[0]
-                    out_exp = st.session_state.inventory.loc[idx,"expire_date"]
-                    st.session_state.inventory.loc[idx,"quantity"] -= out_qty
-                    if st.session_state.inventory.loc[idx,"quantity"]<=0: st.session_state.inventory = st.session_state.inventory.drop(idx)
-                    st.session_state.inventory.loc[len(st.session_state.inventory)] = ["small", out_name, st.session_state.inventory.loc[idx,"unit"], st.session_state.inventory.loc[idx,"weight_per_unit"], out_qty, out_exp, datetime.now()]
-                    log("불출", warehouse, "small", out_name, out_qty, out_exp, "작은창고 이동")
-                    st.success(f"{out_name} 불출 완료")
+                    filtered = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==out_name)]
+                    if not filtered.empty:
+                        idx = filtered["expire_date"].idxmin()  # 제일 빠른 유통기한 선택
+                        out_exp = st.session_state.inventory.loc[idx,"expire_date"]
+                        st.session_state.inventory.loc[idx,"quantity"] -= out_qty
+                        if st.session_state.inventory.loc[idx,"quantity"]<=0:
+                            st.session_state.inventory = st.session_state.inventory.drop(idx)
+                        st.session_state.inventory.loc[len(st.session_state.inventory)] = ["small", out_name, filtered.loc[idx,"unit"], filtered.loc[idx,"weight_per_unit"], out_qty, out_exp, datetime.now()]
+                        log("불출", warehouse, "small", out_name, out_qty, out_exp, "작은창고 이동")
+                        st.success(f"{out_name} 불출 완료")
+                    else:
+                        st.error(f"{out_name} 재고가 없습니다.")
 
-    show_inventory(items)
+    show_inventory(items, warehouse)
 
 # ------------------------
 # 작은창고
@@ -143,7 +154,7 @@ with tab2:
     st.divider(); st.subheader("✏️ 재고 정정 (작은창고)")
     if not items.empty:
         target_idx = st.selectbox("정정할 물품", items.index, format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}", key="small_select")
-        new_qty = st.number_input("정정 후 수량", min_value=0, value=int(items.loc[target_idx,"quantity"]), key="small_qty")
+        new_qty = st.number_input("정정 후 수량", min_value=0, value=int(items.loc[target_idx,"quantity"]), step=1, key="small_qty")
         new_exp = st.date_input("정정 후 유통기한", value=pd.to_datetime(items.loc[target_idx,"expire_date"]), key="small_exp")
         note = st.text_input("정정 사유 (선택)", key="small_note")
         if st.button("정정 실행 (작은창고)", key="small_btn"):
@@ -155,6 +166,7 @@ with tab2:
 
     if not board_mode:
         st.divider(); st.subheader("📥 신규 추가 / 📤 소비")
+        # 추가
         with st.form("small_add"):
             name = st.text_input("물품명(소)", key="small_add_name")
             qty = st.number_input("수량(소)",1,1,key="small_add_qty")
@@ -166,19 +178,25 @@ with tab2:
                 log("추가", warehouse, warehouse, name, qty, exp)
                 st.success(f"{name} 추가 완료")
 
+        # 소비
         if not items.empty:
             with st.form("small_use"):
                 use_name = st.selectbox("소비 물품", items["item_name"].unique(), key="small_use_name")
                 use_qty = st.number_input("소비 수량",1,1,key="small_use_qty")
                 if st.form_submit_button("소비(작은창고)"):
-                    idx = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==use_name)].index[0]
-                    exp = st.session_state.inventory.loc[idx,"expire_date"]
-                    st.session_state.inventory.loc[idx,"quantity"] -= use_qty
-                    if st.session_state.inventory.loc[idx,"quantity"]<=0: st.session_state.inventory = st.session_state.inventory.drop(idx)
-                    log("소비", warehouse, warehouse, use_name, use_qty, exp)
-                    st.success(f"{use_name} 소비 완료")
+                    filtered = st.session_state.inventory[(st.session_state.inventory["warehouse"]==warehouse)&(st.session_state.inventory["item_name"]==use_name)]
+                    if not filtered.empty:
+                        idx = filtered["expire_date"].idxmin()
+                        exp = st.session_state.inventory.loc[idx,"expire_date"]
+                        st.session_state.inventory.loc[idx,"quantity"] -= use_qty
+                        if st.session_state.inventory.loc[idx,"quantity"]<=0:
+                            st.session_state.inventory = st.session_state.inventory.drop(idx)
+                        log("소비", warehouse, warehouse, use_name, use_qty, exp)
+                        st.success(f"{use_name} 소비 완료")
+                    else:
+                        st.error(f"{use_name} 재고가 없습니다.")
 
-    show_inventory(items)
+    show_inventory(items, warehouse)
 
 # ------------------------
 # 기록 탭
