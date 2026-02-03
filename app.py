@@ -2,18 +2,24 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
+# ------------------------
+# 앱 설정
+# ------------------------
 st.set_page_config(page_title="창고 재고 관리", layout="wide")
 
 # ------------------------
-# 컬럼 정의
+# 세션 초기화 (빈 데이터프레임 포함)
 # ------------------------
-inventory_columns = ["warehouse","item_name","unit","weight_per_unit","quantity","expire_date","created_at"]
-log_columns = ["timestamp","user","action","warehouse_from","warehouse_to","item_name","quantity","expire_date","note"]
-
 if "inventory" not in st.session_state:
-    st.session_state.inventory = pd.DataFrame(columns=inventory_columns)
+    st.session_state.inventory = pd.DataFrame(columns=[
+        "warehouse","item_name","unit","weight_per_unit","quantity","expire_date","created_at"
+    ])
+
 if "logs" not in st.session_state:
-    st.session_state.logs = pd.DataFrame(columns=log_columns)
+    st.session_state.logs = pd.DataFrame(columns=[
+        "timestamp","user","action","warehouse_from","warehouse_to","item_name","quantity","expire_date","note"
+    ])
+
 if "hidden_items" not in st.session_state:
     st.session_state.hidden_items = set()
 
@@ -30,14 +36,16 @@ tab1, tab2, tab3 = st.tabs(["큰창고","작은창고","📜 기록"])
 # 공통 함수
 # ------------------------
 def log(action, w_from, w_to, name, qty, exp, note=""):
-    st.session_state.logs.loc[len(st.session_state.logs)] = [datetime.now(), user, action, w_from, w_to, name, qty, exp, note]
+    st.session_state.logs.loc[len(st.session_state.logs)] = [
+        datetime.now(), user, action, w_from, w_to, name, qty, exp, note
+    ]
 
 def compute_total_weight(df):
     total = 0
     unit_type = ""
     for _, r in df.iterrows():
         val, u = r['weight_per_unit'], r['unit']
-        total += val*r['quantity']
+        total += val * r['quantity']
         if u in ['L','mL']: unit_type='L'
         else: unit_type='kg'
     if unit_type=='L' and total>=1000: return f"{total/1000:.2f}L"
@@ -64,14 +72,13 @@ def show_inventory(df, warehouse):
         with st.expander(f"{item} | 총 {i_df['quantity'].sum()}개 | {total_w} | 제일 빠른 유통기한: {earliest_exp}"):
             st.dataframe(i_df[["quantity","unit","weight_per_unit","expire_date"]].style.applymap(color_expiry, subset=["expire_date"]), use_container_width=True)
             if board_mode:
-                # 모바일 친화 체크박스
                 hide = st.checkbox("현황판에서 숨기기", key=f"hide_{warehouse}_{item}")
                 if hide: st.session_state.hidden_items.add(item)
                 elif item in st.session_state.hidden_items:
                     st.session_state.hidden_items.remove(item)
 
 # ------------------------
-# 큰창고 탭
+# 큰창고
 # ------------------------
 with tab1:
     st.subheader("🏭 큰창고")
@@ -123,7 +130,7 @@ with tab1:
     show_inventory(items)
 
 # ------------------------
-# 작은창고 탭
+# 작은창고
 # ------------------------
 with tab2:
     st.subheader("📦 작은창고")
