@@ -98,6 +98,44 @@ else:
         items.index,
         format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}"
     )
+current_qty = items.loc[target_idx, "quantity"]
+current_exp = items.loc[target_idx, "expire_date"]
+
+new_qty = st.number_input(
+    "정정 후 수량",
+    min_value=0,
+    value=int(current_qty),
+    step=1
+)
+
+new_exp = st.date_input(
+    "정정 후 유통기한", value=current_exp
+)
+
+note = st.text_input("정정 사유 (선택)")
+if st.button("정정 실행"):
+    before_qty = current_qty
+    before_exp = current_exp
+
+    st.session_state.inventory.loc[target_idx, "quantity"] = new_qty
+    st.session_state.inventory.loc[target_idx, "expire_date"] = new_exp
+
+    st.session_state.logs = pd.concat([
+        st.session_state.logs,
+        pd.DataFrame([{
+            "timestamp": datetime.now(),
+            "user": user,
+            "action": "정정",
+            "warehouse_from": "big",
+            "warehouse_to": "big",
+            "item_name": items.loc[target_idx, "item_name"],
+            "quantity": f"{before_qty} → {new_qty}",
+            "expire_date": f"{before_exp} → {new_exp}",
+            "note": note
+        }])
+    ], ignore_index=True)
+
+    st.success("정정 완료 (기록 남김)")
     if not board_mode:
         with st.form("big_in"):
             name = st.text_input("물품명")
@@ -129,6 +167,56 @@ else:
 with tab2:
     st.subheader("📦 작은창고")
 
+items = st.session_state.inventory[
+    st.session_state.inventory["warehouse"] == "small"
+]
+
+if items.empty:
+    st.info("정정할 재고가 없습니다.")
+else:
+    target_idx = st.selectbox(
+        "정정할 물품",
+        items.index,
+        format_func=lambda i: f"{items.loc[i,'item_name']} | {items.loc[i,'quantity']}개 | {items.loc[i,'expire_date']}"
+    )
+current_qty = items.loc[target_idx, "quantity"]
+current_exp = items.loc[target_idx, "expire_date"]
+
+new_qty = st.number_input(
+    "정정 후 수량",
+    min_value=0,
+    value=int(current_qty),
+    step=1
+)
+
+new_exp = st.date_input(
+    "정정 후 유통기한", value=current_exp
+)
+
+note = st.text_input("정정 사유 (선택)")
+if st.button("정정 실행"):
+    before_qty = current_qty
+    before_exp = current_exp
+
+    st.session_state.inventory.loc[target_idx, "quantity"] = new_qty
+    st.session_state.inventory.loc[target_idx, "expire_date"] = new_exp
+
+    st.session_state.logs = pd.concat([
+        st.session_state.logs,
+        pd.DataFrame([{
+            "timestamp": datetime.now(),
+            "user": user,
+            "action": "정정",
+            "warehouse_from": "big",
+            "warehouse_to": "big",
+            "item_name": items.loc[target_idx, "item_name"],
+            "quantity": f"{before_qty} → {new_qty}",
+            "expire_date": f"{before_exp} → {new_exp}",
+            "note": note
+        }])
+    ], ignore_index=True)
+
+    st.success("정정 완료 (기록 남김)")
     if not board_mode:
         with st.form("small_add"):
             name = st.text_input("물품명(소)")
